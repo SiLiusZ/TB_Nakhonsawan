@@ -20,7 +20,7 @@
         /* Adjust the map container to be responsive */
         #map {
             width: 100%;
-            height: 100vh; /* Make it responsive */
+            height: 85vh; /* Make it responsive */
             max-height: 650px; /* Set maximum height */
         }
 
@@ -86,6 +86,7 @@
     </style>
 </head>
 <body>
+    <h1>Map from GeoJSON with Year and District Filter</h1>
 
     <!-- Map Container -->
     <div id="map"></div>
@@ -207,7 +208,6 @@
 
         // Fetch the GeoJSON data and set up dropdowns
         fetch("updated_geojson_file.geojson")
-
             .then(response => response.json())
             .then(data => {
                 // Populate the district dropdown with unique district names
@@ -258,27 +258,6 @@
             var selectedDistrict = event.target.value;
             loadGeoJSON(selectedYear, selectedDistrict); // Reload the GeoJSON data for the selected year and district
         });
-
-        // Initialize the legend
-        var legend = L.control({position: 'bottomright'});
-
-      
-
-            // Add color swatches and labels for each range
-            grades.forEach(function (grade, index) {
-                labels.push(
-                    '<div><span class="legend-color" style="background-color:' + getColorBasedOnRange({properties: {'Number of patients': grade}}) + '"></span>' +
-                    (grades[index + 1] ? grade + ' - ' + grades[index + 1] : grade + '+') + '</div>'
-                );
-            });
-
-            div.innerHTML = labels.join('');
-            return div;
-        };
-
-        // Add the legend to the map
-        legend.addTo(map);
     </script>
-
 </body>
 </html>
