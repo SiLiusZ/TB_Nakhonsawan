@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map from GeoJSON with Dynamic Color Ranges</title>
+    
+    <!-- Add the link for the Mitr font from Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@300;400;600&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-ajax/1.0.0/leaflet.ajax.min.js"></script>
+    <style>
+        /* Apply the Mitr font to the entire page */
+        body {
+            font-family: 'Mitr', sans-serif;
+        }
+
+        /* Adjust the map container to be responsive */
+        #map {
+            width: 100%;
+            height: 100vh; /* Make it responsive */
+            max-height: 650px; /* Set maximum height */
+        }
+
+        .leaflet-control-custom {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            max-width: 250px; /* Set max-width for the control */
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        .legend {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 1000;
+            width: 200px; /* Set fixed width */
+        }
+        .legend div {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .legend-color {
+            width: 60px;
+            height: 20px;
+            margin-right: 10px;
+        }
+        @media (max-width: 768px) {
+            .leaflet-control-custom {
+                width: 100%;
+            }
+            .legend {
+                width: 90%;
+                bottom: 20px;
+                left: 5%;
+            }
+        }
+        @media (max-width: 480px) {
+            #map {
+                height: 50vh; /* Adjust map height on smaller screens */
+            }
+            .legend {
+                width: 100%;
+                left: 0;
+                bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <script>
+        // Create a map centered at a default location (e.g., Nakhon Sawan)
+        var map = L.map('map').setView([15.7284, 100.1249], 9);
+
+        // Add a tile layer to the map (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Variable to store the GeoJSON layer
+        var geojsonLayer;
+
+        // Function to load GeoJSON data and add it to the map
+        function loadGeoJSON(year, district) {
+            // Remove the previous layer if it exists
+            if (geojsonLayer) {
+                map.removeLayer(geojsonLayer);
+            }
+
+            // Fetch the GeoJSON data and filter based on selected year and district
+            fetch("updated_geojson_file.geojson")
+                .then(response => response.json())
+                .then(data => {
+                    var filteredData = data.features.filter(function (feature) {
+                        return feature.properties['ปีที่ขึ้นทะเบียน'] == year &&
+                               (district ? feature.properties['AP_TN'] === district : true);
+                    });
+
+                    geojsonLayer = new L.GeoJSON(filteredData, {
+                        style: function (feature) {
+                            return {
+                                fillColor: getColorBasedOnRange(feature), // Set color based on the range
+                                weight: 3,
+                                opacity: 1,
+                                color: 'white',
+                                dashArray: '0',
+                                fillOpacity: 0.8
+                            };
+                        },
+                        onEachFeature: function (feature, layer) {
+                            // Add a popup to each feature displaying its properties
+                            var districtName = feature.properties.TB_TN || "N/A"; // Show N/A if the district name is missing
+                            var yearRegistered = feature.properties['ปีที่ขึ้นทะเบียน'] || "N/A";
+                            var patientCount = feature.properties['Number of patients'] !== undefined ? feature.properties['Number of patients'] : "N/A"; // Show N/A if number of patients is missing
+
+                            var popupContent = "<b>ตำบล:</b> " + districtName +
+                                               "<br><b>ปี:</b> " + yearRegistered +
+                                               "<br><b>จำนวนผู้ป่วย:</b> " + patientCount;
+                            layer.bindPopup(popupContent);
+
+                            // Hover functionality: change fill color on hover
+                            layer.on({
+                                mouseover: function() {
+                                    layer.setStyle({
+                                        fillColor: '#f70737' // Light blue on hover
+                                    });
+                                    layer.openPopup(); // Open the popup on hover
+                                },
+                                mouseout: function() {
+                                    layer.setStyle({
+                                        fillColor: getColorBasedOnRange(feature) // Reset original color
+                                    });
+                                    layer.closePopup(); // Close the popup when mouseout
+                                }
+                            });
+                        }
+                    }).addTo(map);
+                });
+        }
+
+        // Function to calculate fillColor based on the number of patients
+        function getColorBasedOnRange(feature) {
+            var count = feature.properties['Number of patients'];
+
+            if (count == 0) {
+                return '#050505'; // Gray color for zero patients
+            } else if (count >= 1 && count <= 4) {
+                return '#008000'; // Green (แรง 1-4)
+            } else if (count >= 5 && count <= 10) {
+                return '#FFFF00'; // Yellow (แรง 5-10)
+            } else if (count >= 11 && count <= 15) {
+                return '#FFA500'; // Orange (แรง 11-15)
+            } else if (count >= 16 && count <= 50) {
+                return '#FF0000'; // Red (แรง 16-50)
+            } else {
+                return '#808080'; // Gray (for values beyond 50)
+            }
+        }
+
+        // Function to populate the district dropdown
+        function populateDistrictDropdown(geojsonData) {
+            var districts = [];
+
+            // Loop through the features in the GeoJSON data and collect the unique district names (AP_TN)
+            geojsonData.features.forEach(function (feature) {
+                var district = feature.properties['AP_TN'];
+                if (districts.indexOf(district) === -1) {
+                    districts.push(district);
+                }
+            });
+
+            // Sort the districts alphabetically
+            districts.sort();
+
+            // Populate the dropdown with district options
+            var districtDropdown = document.getElementById('districtDropdown');
+            districtDropdown.innerHTML = '<option value="">ทุกอำเภอ</option>'; // Default option for all districts
+            districts.forEach(function (district) {
+                var option = document.createElement('option');
+                option.value = district;
+                option.textContent = district;
+                districtDropdown.appendChild(option);
+            });
+        }
+
+        // Fetch the GeoJSON data and set up dropdowns
+        fetch("https://script.google.com/macros/s/AKfycbydTOseSIlvZDICm2abB3N5PctC7fCRdanB-P82ZWdxHitfJspGVs2AyOCbbA3s_e8F/exec")
+
+            .then(response => response.json())
+            .then(data => {
+                // Populate the district dropdown with unique district names
+                populateDistrictDropdown(data);
+
+                // Initially load GeoJSON data for year 2562 and all districts
+                loadGeoJSON(2562, null);
+            });
+
+        // Create custom control for dropdown filters
+        var control = L.control({position: 'topright'});
+
+        control.onAdd = function () {
+            var div = L.DomUtil.create('div', 'leaflet-control-custom');
+            div.innerHTML = `
+                <label for="yearDropdown">เลือกปีที่ขึ้นทะเบียน:</label>
+                <select id="yearDropdown">
+                    <option value="2562">2562</option>
+                    <option value="2563">2563</option>
+                    <option value="2564">2564</option>
+                    <option value="2565">2565</option>
+                    <option value="2566">2566</option>
+                    <option value="2567">2567</option>
+                    <option value="2568">2568</option>
+                    <option value="2569">2569</option>
+                </select>
+                <label for="districtDropdown">เลือกอำเภอ:</label>
+                <select id="districtDropdown">
+                    <!-- District options will be dynamically added here -->
+                </select>
+            `;
+            return div;
+        };
+
+        // Add the control to the map
+        control.addTo(map);
+
+        // Event listener for year dropdown change
+        document.getElementById('yearDropdown').addEventListener('change', function(event) {
+            var selectedYear = event.target.value;
+            var selectedDistrict = document.getElementById('districtDropdown').value;
+            loadGeoJSON(selectedYear, selectedDistrict); // Reload the GeoJSON data for the selected year and district
+        });
+
+        // Event listener for district dropdown change
+        document.getElementById('districtDropdown').addEventListener('change', function(event) {
+            var selectedYear = document.getElementById('yearDropdown').value;
+            var selectedDistrict = event.target.value;
+            loadGeoJSON(selectedYear, selectedDistrict); // Reload the GeoJSON data for the selected year and district
+        });
+
+        // Initialize the legend
+        var legend = L.control({position: 'bottomright'});
+
+        legend.onAdd = function () {
+            var div = L.DomUtil.create('div', 'legend');
+            var grades = [0, 4, 10, 15, 50];
+            var labels = [];
+
+            // Add color swatches and labels for each range
+            grades.forEach(function (grade, index) {
+                labels.push(
+                    '<div><span class="legend-color" style="background-color:' + getColorBasedOnRange({properties: {'Number of patients': grade}}) + '"></span>' +
+                    (grades[index + 1] ? grade + ' - ' + grades[index + 1] : grade + '+') + '</div>'
+                );
+            });
+
+            div.innerHTML = labels.join('');
+            return div;
+        };
+
+        // Add the legend to the map
+        legend.addTo(map);
+    </script>
+
+</body>
+</html>
