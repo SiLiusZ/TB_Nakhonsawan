@@ -262,10 +262,7 @@
         // Initialize the legend
         var legend = L.control({position: 'bottomright'});
 
-        legend.onAdd = function () {
-            var div = L.DomUtil.create('div', 'legend');
-            var grades = [0, 4, 10, 15, 50];
-            var labels = [];
+      
 
             // Add color swatches and labels for each range
             grades.forEach(function (grade, index) {
