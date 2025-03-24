@@ -6,7 +6,7 @@
     <title>Firebase Example</title>
 </head>
 <body>
-    <h1>Firebase Example</h1>
+    <h1>Firebase User Registration</h1>
     
     <form id="register-form">
         <input type="email" id="email" placeholder="Email" required>
@@ -14,14 +14,24 @@
         <button type="submit">Register</button>
     </form>
 
-    <script src="firebase-config.js"></script>
-    <script>
+    <div id="error-message"></div>
+
+    <script type="module">
+        import { registerUser } from './firebase.js';
+
+        // จับเหตุการณ์การส่งฟอร์ม
         document.getElementById('register-form').addEventListener('submit', function(event) {
-            event.preventDefault();
+            event.preventDefault(); // หยุดการส่งฟอร์มแบบธรรมดา
 
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            registerUser(email, password);
+            
+            // ตรวจสอบว่ามีการกรอกข้อมูลในฟอร์มหรือไม่
+            if (email && password) {
+                registerUser(email, password);
+            } else {
+                document.getElementById('error-message').textContent = "Please fill out both fields!";
+            }
         });
     </script>
 </body>
