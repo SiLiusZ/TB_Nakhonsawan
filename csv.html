@@ -1,0 +1,368 @@
+
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>อัพโหลดไฟล์ CSV และ GeoJSON ไปยัง GitHub</title>
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@300&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body {
+            font-family: 'Mitr', sans-serif;
+            background-color: #f4f6f8;
+
+        }
+
+        header {
+            background-color: #007554;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .container {
+            margin-top: 30px;
+        }
+
+        .upload-section {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-custom {
+            background-color: #007554;
+            color: white;
+            border-radius: 8px;
+            padding: 10px 20px;
+        }
+
+        .btn-custom:hover {
+            background-color: #005f43;
+        }
+
+        #userInfo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            display: none;
+            /* ซ่อนข้อมูลผู้ใช้ */
+        }
+
+        .logout-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .home-btn {
+            
+            position: fixed;
+            bottom: 20px;
+            right: 150px;
+            z-index: 1000;
+        }
+        
+    </style>
+</head>
+
+<body>
+
+    <div id="userInfo"></div>
+
+    <header>
+        <h2>อัพโหลดไฟล์ CSV และ GeoJSON ไปยัง GitHub</h2>
+    </header>
+
+    <div class="container">
+        <div class="upload-section">
+            <h3>เลือกไฟล์ที่ต้องการอัปโหลด</h3>
+            <form id="uploadForm">
+                <div class="form-group mb-3">
+                    <label for="fileInput" class="form-label">เลือกไฟล์ (.csv หรือ .geojson)</label>
+                    <input type="file" class="form-control" id="fileInput" accept=".csv,.geojson" required>
+                </div>
+                <button type="submit" class="btn btn-custom">
+                    <span id="uploadText">อัพโหลดไฟล์</span>
+                    <span id="uploadSpinner" class="spinner-border spinner-border-sm d-none" role="status"
+                        aria-hidden="true"></span>
+                </button>
+                
+            </form>
+        </div>
+    </div>
+
+    <!-- ปุ่มออกจากระบบ -->
+    <button onclick="goHome()" class="btn btn-primary home-btn">กลับไปหน้าแรก</button>
+    <button onclick="logout()" class="btn btn-danger logout-btn">ออกจากระบบ</button>
+
+    <!-- เพิ่ม Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+    <script>
+        // ตั้งค่า Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAr1tlRiZ5-mov_z9LLjRmxy1dMZq-oZcY",
+            authDomain: "tb-nakhonsawan.firebaseapp.com",
+            projectId: "tb-nakhonsawan",
+            storageBucket: "tb-nakhonsawan.appspot.com",
+            messagingSenderId: "120719107641",
+            appId: "1:120719107641:web:d9c7d7d550005a3a224fe8",
+            measurementId: "G-3MRKTJF9WK"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        // ตรวจสอบการล็อกอิน
+        auth.onAuthStateChanged((user) => {
+            if (!user) {
+                window.location.href = 'login.html';
+            } else {
+                document.getElementById("userInfo").innerText = `ผู้ใช้: ${user.email}`;
+                startLogoutTimer();
+            }
+        });
+
+        // ระบบ Auto-Logout
+        let logoutTimer;
+
+        function startLogoutTimer() {
+            const timeout = 30 * 60 * 1000; // 30 นาที
+
+            clearTimeout(logoutTimer);
+
+            logoutTimer = setTimeout(() => {
+                auth.signOut().then(() => {
+                    Swal.fire({
+                        title: 'เซสชั่นจะหมดอายุ',
+                        text: 'ระบบจะออกจากระบบโดยอัตโนมัติเนื่องจากไม่มีการใช้งาน',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#007554',
+                        cancelButtonColor: '#d33',
+                        confirmButtonText: 'ออกจากระบบ',
+                        cancelButtonText: 'อยู่ในระบบต่อ'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            window.location.href = 'login.html';
+                        } else {
+                            resetLogoutTimer();
+                        }
+                    });
+                }).catch((error) => {
+                    console.error('ออกจากระบบไม่สำเร็จ:', error);
+                });
+            }, timeout);
+        }
+
+        function resetLogoutTimer() {
+            startLogoutTimer();
+        }
+
+        // ตรวจจับกิจกรรมผู้ใช้
+        ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(event => {
+            document.addEventListener(event, resetLogoutTimer);
+        });
+
+        // ส่วนการอัพโหลดไฟล์ไป GitHub
+        const token = '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'; // แทนที่ด้วย GitHub Token ของคุณ
+        const repo = 'TB_Nakhonsawan'; // ชื่อ repository
+        const branch = 'main'; // ชื่อ branch เช่น 'main' หรือ 'master'
+
+        async function getFileSHA(fileName) {
+            const url = `https://api.github.com/repos/SiLiusZ/${repo}/contents/${fileName}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                if (!response.ok) {
+                    console.warn(`ไฟล์ ${fileName} ยังไม่มีอยู่บน GitHub (อัปโหลดใหม่)`);
+                    return null; // ถ้าไม่มีไฟล์เดิม ให้ส่งค่า null
+                }
+
+                const data = await response.json();
+                return data.sha; // คืนค่า SHA ของไฟล์เดิม
+            } catch (error) {
+                console.error('เกิดข้อผิดพลาดในการดึง SHA ของไฟล์:', error);
+                return null;
+            }
+        }
+
+        async function uploadFileToGitHub(fileName, fileContentBase64) {
+            const sha = await getFileSHA(fileName); // เช็ก SHA ของไฟล์เดิม
+
+            const url = `https://api.github.com/repos/SiLiusZ/${repo}/contents/${fileName}`;
+
+            const data = {
+                message: `Update ${fileName} via API`,
+                committer: { name: 'SiLiusZ', email: 'dragonball_ong@hotmail.com' },
+                content: fileContentBase64,
+                branch: branch
+            };
+
+            if (sha) {
+                data.sha = sha; // ใส่ SHA เพื่อบังคับให้ GitHub อัปเดตไฟล์เดิม
+            }
+
+            // แสดง loading animation
+            const uploadBtn = document.querySelector('#uploadForm button[type="submit"]');
+            const uploadText = document.getElementById('uploadText');
+            const uploadSpinner = document.getElementById('uploadSpinner');
+
+            uploadText.textContent = 'กำลังอัพโหลด...';
+            uploadSpinner.classList.remove('d-none');
+            uploadBtn.disabled = true;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.content) {
+                    // แสดงผลสำเร็จแบบสวยงาม
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'อัพโหลดสำเร็จ!',
+                        html: `ไฟล์ <b>${fileName}</b> ถูกอัปเดตเรียบร้อยแล้ว`,
+                        confirmButtonText: 'ตกลง',
+                        confirmButtonColor: '#007554',
+                        timer: 3000,
+                        timerProgressBar: true,
+                        willClose: () => {
+                            // รีเซ็ตฟอร์มหลังอัพโหลดสำเร็จ
+                            document.getElementById('uploadForm').reset();
+                        }
+                    });
+                } else {
+                    // แสดงข้อผิดพลาด
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'เกิดข้อผิดพลาด',
+                        html: `ไม่สามารถอัพโหลดไฟล์ได้: <br><b>${result.message || 'Unknown error'}</b>`,
+                        confirmButtonText: 'ตกลง',
+                        confirmButtonColor: '#dc3545'
+                    });
+                    console.error(result);
+                }
+            } catch (error) {
+                // แสดงข้อผิดพลาดจาก network
+                Swal.fire({
+                    icon: 'error',
+                    title: 'การเชื่อมต่อล้มเหลว',
+                    text: 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ GitHub',
+                    confirmButtonText: 'ตกลง',
+                    confirmButtonColor: '#dc3545'
+                });
+                console.error('Error uploading file:', error);
+            } finally {
+                // รีเซ็ตปุ่มไม่ว่าจะสำเร็จหรือล้มเหลว
+                uploadText.textContent = 'อัพโหลดไฟล์';
+                uploadSpinner.classList.add('d-none');
+                uploadBtn.disabled = false;
+            }
+        }
+
+        // จัดการฟอร์มอัพโหลด
+        document.getElementById('uploadForm').addEventListener('submit', async function (event) {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'กรุณาเลือกไฟล์',
+                    text: 'คุณยังไม่ได้เลือกไฟล์ที่จะอัพโหลด',
+                    confirmButtonText: 'ตกลง',
+                    confirmButtonColor: '#007554'
+                });
+                return;
+            }
+
+            // ยืนยันการอัพโหลด
+            const { isConfirmed } = await Swal.fire({
+                title: 'ยืนยันการอัพโหลดไฟล์',
+                html: `คุณแน่ใจต้องการอัพโหลดไฟล์ <b>${file.name}</b> ไปยัง GitHub หรือไม่?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#007554',
+                cancelButtonColor: '#dc3545',
+                confirmButtonText: 'อัพโหลด',
+                cancelButtonText: 'ยกเลิก'
+            });
+
+            if (isConfirmed) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const fileContentBase64 = e.target.result.split(',')[1];
+                    uploadFileToGitHub(file.name, fileContentBase64);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // ฟังก์ชันออกจากระบบ
+        function logout() {
+            Swal.fire({
+                title: 'ออกจากระบบ',
+                text: 'คุณแน่ใจต้องการออกจากระบบหรือไม่?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#007554',
+                cancelButtonColor: '#dc3545',
+                confirmButtonText: 'ออกจากระบบ',
+                cancelButtonText: 'ยกเลิก'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    auth.signOut().then(() => {
+                        window.location.href = 'login.html';
+                    }).catch(error => {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'ออกจากระบบไม่สำเร็จ',
+                            text: 'เกิดข้อผิดพลาดในการออกจากระบบ',
+                            confirmButtonText: 'ตกลง'
+                        });
+                        console.error('เกิดข้อผิดพลาดในการออกจากระบบ:', error);
+                    });
+                }
+            });
+        }
+        function goHome() {
+            window.location.href = 'home.html'; // เปลี่ยนเป็น URL ของหน้าแรกที่ต้องการ
+        }
+    </script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
