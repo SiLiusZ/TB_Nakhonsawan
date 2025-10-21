@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>รายงานผลการคัดกรองวัณโรค</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,line-clamp"></script>
+    
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.31.1.min.js"></script>
+    
+    <!-- Google Font: Sarabun -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom font family: Sarabun */
+        body { font-family: 'Sarabun', sans-serif; }
+        /* Style for Chart container - Modified to a single flexible area */
+        #charts-area { 
+            /* min-height: 600px; - Removed fixed min-height */
+            display: flex;
+            flex-wrap: wrap; /* Allows wrapping on smaller screens */
+            justify-content: center;
+            align-items: flex-start;
+        }
+        /* Style for individual charts */
+        .chart-plot-container {
+            width: 100%; /* Default to full width on mobile */
+            padding: 1rem;
+        }
+        /* Responsive sizing for large screens (e.g., desktop) */
+        @media (min-width: 1024px) {
+            .chart-plot-container.group-chart {
+                /* ลบคลาส lg:w-1/2 เพื่อให้เรียงซ้อนกันในแนวตั้ง */
+                /* width: calc(50% - 1rem); */
+            }
+        }
+        
+        .data-table th, .data-table td { border-bottom: 1px solid #e5e7eb; }
+        .data-table th { background-color: #f3f4f6; }
+        
+        /* Sleek Button Hover Effect */
+        .btn-sleek {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn-sleek:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <!-- Navbar -->
+    <nav class="bg-gray-800 shadow-xl"> 
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <a href="report.html" class="text-white text-2xl font-extrabold tracking-wider">รายงานผล</a>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-4">
+                        <a href="report.html" class="bg-gray-700 text-white px-3 py-2 rounded-md text-sm font-medium transition duration-150">หน้าหลัก</a>
+                        <a href="admin.html" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition duration-150">หน้าสำหรับแอดมิน</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container max-w-7xl mx-auto mt-8 p-4 sm:p-6 lg:p-8">
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-2xl border border-gray-200">
+            <h2 class="text-3xl font-bold text-center text-gray-900 mb-6 border-b-4 border-blue-600 pb-3"> 
+                รายงานผลการคัดกรองวัณโรคแยกตามสถานบริการ
+            </h2>
+            
+            <!-- Firebase Status Panel (NEW) -->
+            <div id="firebaseStatus" class="mb-6 p-4 rounded-xl text-sm bg-blue-50 border border-blue-200 text-center">
+                <span id="dataStatus" class="font-semibold text-blue-800">กำลังเชื่อมต่อและโหลดข้อมูล...</span>
+            </div>
+
+            <!-- Filter Control -->
+            <div class="controls flex justify-center mb-8 bg-gray-50 p-4 rounded-xl shadow-inner border border-gray-200"> 
+                <label for="hospitalFilter" class="text-lg font-semibold text-gray-700 self-center mr-4">
+                    ตัวกรองสถานบริการ:
+                </label>
+                <select id="hospitalFilter" onchange="filterData()" 
+                        class="px-4 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto">
+                    <option value="All">-- แสดงทั้งหมด --</option>
+                </select>
+            </div>
+
+            <!-- Chart Container (Plotly) -->
+            <!-- Use chart-main-overall ID for single chart -->
+            <div id="charts-area" class="flex flex-wrap justify-center -mx-2 mb-12">
+                <div id="chart-main-overall" class="chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100">
+                    <!-- Plotly chart will be injected here (used for Overall View) -->
+                </div>
+            </div>
+
+            <!-- Summary Table -->
+            <div class="mt-10">
+                <h3 class="text-2xl font-bold text-center text-gray-700 mb-6">ตารางข้อมูลสรุปผลการคัดกรอง</h3>
+                <div id="table-container" class="overflow-x-auto shadow-2xl rounded-xl border border-gray-200">
+                    <!-- Table will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Insert Firebase Config Variables Here (Same as admin.html) -->
+    <script>
+        // *** ค่าเหล่านี้ถูกกำหนดโดย Firebase Project ของคุณ ***
+        const __app_id = "1:743854393345:web:cc3f5ac35d595b0fbe9800"; 
+        
+        const __firebase_config = JSON.stringify({
+            apiKey: "AIzaSyBm7RaOTOvEK4bNYMEZF3U0wKKvk7Ku47M",
+            authDomain: "tbelf-54285.firebaseapp.com",
+            projectId: "tbelf-54285",
+            storageBucket: "tbelf-54285.firebasestorage.app",
+            messagingSenderId: "743854393345",
+            appId: __app_id 
+        });
+        
+        const __initial_auth_token = null; 
+    </script>
+    
+    <!-- Firebase SDK Imports and Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // REMOVED AUTH IMPORTS: ลบการนำเข้า Auth ทั้งหมดออก
+        import { getFirestore, collection, query, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('debug'); // Enable debug logging for Firebase operations
+
+        // --- GLOBAL VARIABLES (Config from <script> block) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // REMOVED: initialAuthToken is no longer needed
+        
+        let db; // Removed 'auth'
+        let MOCK_DATA = {}; // Global data container
+        
+        // --- โครงสร้างข้อมูลหลัก (คัดลอกมาจาก report.html เดิม) ---
+        const HOSPITALS = [
+            "โรงพยาบาลสวรรค์ประชารักษ์", "โรงพยาบาลเก้าเลี้ยว", "โรงพยาบาลโกรกพระ", "โรงพยาบาลชุมตาบง", "โรงพยาบาลชุุมแสง", "โรงพยาบาลตากฟ้า", 
+            "โรงพยาบาลตาคลี", "โรงพยาบาลบรรพตพิสัย", "โรงพยาบาลพยุหะคีรี", "โรงพยาบาลท่าตะโก", "โรงพยาบาลไพศาลี", "โรงพยาบาลแม่วงก์", 
+            "โรงพยาบาลหนองบัว", "โรงพยาบาลลาดยาว"
+        ];
+
+        const RISK_GROUPS = [
+            "1. ผู้สัมผัสผู้ป่วยวัณโรคปอด", "2. ผู้ติดเชื้อเอชไอวี", "3. ผู้ป่วย DM HbA1C ≥ 7 mg%", "4. ผู้ป่วยโรคไตเรื้อรัง", "5. ผู้ที่ได้รับยากดภูมิ", 
+            "6. ผู้ต้องขัง", "7. ผู้สูงอายุ ≥ 65 ปี ที่มีโรคร่วมเบาหวาน", "8. ผู้สูงอายุ ≥ 65 ปี ที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD", 
+            "9. ผู้สูงอายุ ≥ 65 ปี ที่สูบบุหรี่", "10. ผู้ใช้สารเสพติด+ผู้ติดสุราเรื้อรัง", "11. บุคลากรสาธารณสุข"
+        ];
+        
+        const SUCCESS_THRESHOLDS = {
+            "0. ภาพรวม (ทั้งหมด)": 80, 
+            "1. ผู้สัมผัสผู้ป่วยวัณโรคปอด": 70, 
+            "2. ผู้ติดเชื้อเอชไอวี": 100,      
+            "3. ผู้ป่วย DM HbA1C ≥ 7 mg%": 90, 
+            "4. ผู้ป่วยโรคไตเรื้อรัง": 90,     
+            "5. ผู้ที่ได้รับยากดภูมิ": 90,     
+            "6. ผู้ต้องขัง": 100,              
+            "7. ผู้สูงอายุ ≥ 65 ปี ที่มีโรคร่วมเบาหวาน": 90, 
+            "8. ผู้สูงอายุ ≥ 65 ปี ที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD": 90, 
+            "9. ผู้สูงอายุ ≥ 65 ปี ที่สูบบุหรี่": 90, 
+            "10. ผู้ใช้สารเสพติด+ผู้ติดสุราเรื้อรัง": 90, 
+            "11. บุคลากรสาธารณสุข": 90 
+        };
+        
+        const DATA_STORAGE_KEY = 'tbScreeningDataV2'; 
+
+
+        // --- FIREBASE INITIALIZATION & DATA LOAD LOGIC ---
+        
+        function getCollectionPath() {
+            return `artifacts/${appId}/public/data/tbScreening`;
+        }
+        
+        // 1. Load data from Firestore (or fallback to Local Storage)
+        async function loadAllData() {
+            const statusDiv = document.getElementById('dataStatus');
+            statusDiv.textContent = 'กำลังเชื่อมต่อและโหลดข้อมูล...';
+            
+            // Local Storage Fallback structure (copied from admin.html)
+            function generateInitialDataStructure() {
+                const initialData = {};
+                HOSPITALS.forEach(h => {
+                    initialData[h] = {};
+                    RISK_GROUPS.forEach(r => {
+                        initialData[h][r] = { target: 0, screened: 0 };
+                    });
+                });
+                return initialData;
+            }
+
+            // Local Storage Load
+            function loadDataFromLocalStorage() {
+                const storedData = localStorage.getItem(DATA_STORAGE_KEY);
+                return storedData ? JSON.parse(storedData) : generateInitialDataStructure();
+            }
+
+            if (Object.keys(firebaseConfig).length > 0) {
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    
+                    // NOTE: โค้ดที่ดึงข้อมูลโดยไม่มีการรับรองตัวตน (Unauthenticated Read)
+                    const collectionRef = collection(db, getCollectionPath());
+                    const q = query(collectionRef);
+                    const querySnapshot = await getDocs(q);
+                    
+                    let firestoreData = {};
+                    querySnapshot.forEach((doc) => {
+                        firestoreData[doc.id] = doc.data();
+                    });
+                    
+                    statusDiv.textContent = 'เชื่อมต่อและโหลดข้อมูลจาก Firestore สำเร็จ!';
+                    statusDiv.classList.remove('text-blue-800', 'text-red-700', 'text-yellow-700');
+                    statusDiv.classList.add('text-green-700');
+                    return firestoreData;
+                    
+                } catch (error) {
+                    // หากเกิดข้อผิดพลาดในการโหลด (เช่น Security Rules ไม่ถูกต้อง)
+                    console.error("Error loading data from Firestore, falling back to Local Storage:", error);
+                    statusDiv.textContent = `ข้อผิดพลาดในการโหลดข้อมูลจาก Firestore (ใช้ Local Data แทน)`;
+                    statusDiv.classList.remove('text-blue-800', 'text-green-700', 'text-yellow-700');
+                    statusDiv.classList.add('text-red-700');
+                    // Fallback
+                    return loadDataFromLocalStorage();
+                }
+            } else {
+                statusDiv.textContent = 'ไม่ได้เชื่อมต่อ Firebase (ใช้ Local Mock Data)';
+                statusDiv.classList.remove('text-blue-800', 'text-red-700', 'text-green-700');
+                statusDiv.classList.add('text-yellow-700');
+                return loadDataFromLocalStorage();
+            }
+        }
+
+        // --- Data Processor (เดิม) ---
+        function processData(dataToProcess) {
+            let summary = {};
+            
+            for (const hospital in dataToProcess) {
+                if (dataToProcess.hasOwnProperty(hospital)) {
+                    const riskGroupDetails = dataToProcess[hospital];
+                    
+                    let totalTarget = 0;
+                    let totalScreened = 0;
+                    let details = [];
+
+                    for (const riskGroup in riskGroupDetails) {
+                        const data = riskGroupDetails[riskGroup];
+                        const target = parseInt(data.target) || 0;
+                        const screened = parseInt(data.screened) || 0;
+                        const remaining = target - screened;
+
+                        totalTarget += target;
+                        totalScreened += screened;
+                        details.push({ riskGroup, target, screened, remaining });
+                    }
+
+                    const percentage = totalTarget > 0 ? (totalScreened / totalTarget) * 100 : 0;
+                    
+                    summary[hospital] = {
+                        hospital: hospital, 
+                        totalTarget: totalTarget,
+                        totalScreened: totalScreened,
+                        percentage: percentage,
+                        details: details
+                    };
+                }
+            }
+            
+            let chartData = Object.values(summary);
+            chartData.sort((a, b) => b.percentage - a.percentage);
+            return chartData;
+        }
+
+        // --- Function to add \n to long labels for horizontal chart Y-axis (เดิม) ---
+        function formatRiskGroupLabel(label) {
+            if (!label) return label;
+            
+            let formattedLabel = label
+                .replace(" ที่มีโรคร่วมเบาหวาน", "\nที่มีโรคร่วมเบาหวาน")
+                .replace(" ที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD", "\nที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD")
+                .replace(" ที่สูบบุหรี่", "\nที่สูบบุหรี่")
+                .replace("+ผู้ติดสุราเรื้อรัง", "\n+ผู้ติดสุราเรื้อรัง")
+                .replace("ผู้สัมผัสผู้ป่วยวัณโรคปอด", "ผู้สัมผัส\nผู้ป่วยวัณโรคปอด")
+                .replace("บุคลากรสาธารณสุข", "บุคลากร\nสาธารณสุข");
+
+            return formattedLabel;
+        }
+        
+        // --- Function to assign custom priority for sorting (เดิม) ---
+        function getCustomSortPriority(label) {
+            if (label.includes("0. ภาพรวม")) return 1;
+            if (label.includes("1. ผู้สัมผัสผู้ป่วยวัณโรคปอด")) return 2;
+            if (label.includes("2. ผู้ติดเชื้อเอชไอวี")) return 3;
+            if (label.includes("6. ผู้ต้องขัง")) return 4;
+            
+            const originalIndexMatch = label.match(/^(\d+)/);
+            if (originalIndexMatch) {
+                return 100 + parseFloat(originalIndexMatch[1]);
+            }
+            return 999;
+        }
+
+
+        // --- Get All Risk Group Data for a specific hospital (เดิม) ---
+        function getGroupComparisonData(hospitalData) {
+            if (!hospitalData || hospitalData.length === 0) return [];
+            
+            const hData = hospitalData[0]; 
+            const comparisonData = [];
+
+            hData.details.forEach(detail => {
+                const originalLabel = detail.riskGroup;
+                const targetPct = SUCCESS_THRESHOLDS[originalLabel] || 100; 
+                
+                comparisonData.push({
+                    hospital: hData.hospital,
+                    label: formatRiskGroupLabel(originalLabel),
+                    originalLabel: originalLabel, 
+                    percentage: detail.target > 0 ? (detail.screened / detail.target) * 100 : 0,
+                    target: detail.target,      
+                    screened: detail.screened,  
+                    targetPct: targetPct
+                });
+            });
+            
+            const overallLabel = "0. ภาพรวม (ทั้งหมด)";
+            comparisonData.push({
+                hospital: hData.hospital,
+                label: overallLabel,
+                originalLabel: overallLabel, 
+                percentage: hData.percentage,
+                target: hData.totalTarget,
+                screened: hData.totalScreened,
+                targetPct: SUCCESS_THRESHOLDS[overallLabel] || 100
+            });
+            
+            comparisonData.sort((a, b) => {
+                const priorityA = getCustomSortPriority(a.originalLabel);
+                const priorityB = getCustomSortPriority(b.originalLabel);
+                return priorityA - priorityB;
+            });
+
+            return comparisonData;
+        }
+
+        // --- Plotly Chart Rendering Logic (เดิม) ---
+        function drawChart(data, isComparisonView, targetDivId = 'chart-main-overall', titleOverride = null) {
+            const chartContainer = document.getElementById(targetDivId);
+            
+            let labels, percentages, chartTitle, marginConfig;
+            
+            const orientation = 'h'; 
+            let traces = [];
+            let shapes = []; 
+            let annotations = []; 
+
+            if (!data || data.length === 0) {
+                chartContainer.innerHTML = '<div class="text-center p-4 text-sm text-gray-500">ไม่พบข้อมูลสำหรับกลุ่มนี้</div>';
+                return;
+            }
+
+            const overallDynamicHeight = Math.max(300, data.length * 35 + 150); 
+            const dynamicHeight = Math.max(200, data.length * 60 + 80); 
+            const useHeight = isComparisonView ? dynamicHeight : overallDynamicHeight;
+            
+            if (isComparisonView) {
+                labels = data.map(d => d.label);
+                percentages = data.map(d => d.percentage);
+                chartTitle = titleOverride || `อัตราการคัดกรอง: ${data[0].hospital} (แยกตามกลุ่มเสี่ยง)`;
+                marginConfig = { l: 400, r: 100, t: 60, b: 50 }; 
+                
+                const traceScreening = {
+                    x: percentages, 
+                    y: labels,
+                    name: 'อัตราคัดกรอง (%)',
+                    type: 'bar',
+                    orientation: orientation,
+                    marker: { 
+                        color: data.map(d => {
+                            const targetPct = d.targetPct || 0;
+                            return d.percentage >= targetPct ? '#10b981' : '#f59e0b'; 
+                        }),
+                        line: {
+                            color: 'white',
+                            width: 1
+                        }
+                    },
+                    text: percentages.map(p => `${p.toFixed(2)}%`),
+                    textposition: 'outside',
+                    textfont: {
+                        size: 14, 
+                        family: 'Sarabun, sans-serif'
+                    },
+                    hovertemplate: '<b>%{y}</b><br>อัตราคัดกรอง: %{x:.2f}%<br>เป้าหมาย **(Target): %{customdata[2]}%**<br>เป้าหมาย: %{customdata[0]:,}<br>ผลการคัดกรอง: %{customdata[1]:,}<extra></extra>',
+                    customdata: data.map(d => [d.target, d.screened, d.targetPct])
+                };
+                traces.push(traceScreening);
+                
+                const uniqueTargets = [...new Set(data.map(d => d.targetPct))].filter(t => t > 0);
+
+                uniqueTargets.forEach(target => {
+                    data.forEach((d, index) => {
+                        if (d.targetPct === target) {
+                            shapes.push({
+                                type: 'line',
+                                xref: 'x', 
+                                yref: 'y',
+                                x0: target, 
+                                y0: index - 0.2, 
+                                x1: target, 
+                                y1: index + 0.2, 
+                                line: {
+                                    color: 'red',
+                                    width: 2,
+                                    dash: 'dot' 
+                                }
+                            });
+
+                            const isPriorityGroup = d.originalLabel.includes('0. ภาพรวม') || d.originalLabel.includes('1. ผู้สัมผัส') || d.originalLabel.includes('2. ผู้ติดเชื้อ') || d.originalLabel.includes('6. ผู้ต้องขัง');
+                            
+                            if (isPriorityGroup || target === 90) { 
+                                annotations.push({
+                                    xref: 'x', 
+                                    yref: 'y',
+                                    x: target, 
+                                    y: index, 
+                                    text: `${target}% (เป้าหมาย)`,
+                                    showarrow: false,
+                                    xanchor: 'left', 
+                                    yanchor: 'middle',
+                                    xshift: 5, 
+                                    font: {
+                                        color: 'red',
+                                        size: 14, 
+                                        family: 'Sarabun, sans-serif'
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+                
+            } else {
+                labels = data.map(d => d.hospital);
+                percentages = data.map(d => d.percentage);
+                chartTitle = 'อัตราการคัดกรองวัณโรคตามกลุ่มเสี่ยง (ภาพรวม)';
+                
+                marginConfig = { l: 250, r: 50, t: 80, b: 50 }; 
+                
+                const traceOverall = {
+                    x: percentages, 
+                    y: labels,
+                    name: 'อัตราคัดกรอง (%)',
+                    type: 'bar',
+                    orientation: orientation,
+                    marker: { 
+                        color: '#059669',
+                        line: {
+                            color: 'white',
+                            width: 1
+                        }
+                    }, 
+                    text: percentages.map(p => `${p.toFixed(2)}%`), 
+                    textposition: 'auto',
+                    textfont: {
+                        size: 14, 
+                        family: 'Sarabun, sans-serif'
+                    }, 
+                    hovertemplate: '<b>%{y}</b><br>อัตราคัดกรอง: %{x:.2f}%<br>เป้าหมายรวม: %{customdata[0]:,}<br>ผลการคัดกรอง: %{customdata[1]:,}<extra></extra>',
+                    customdata: data.map(d => [d.totalTarget, d.totalScreened])
+                };
+                traces.push(traceOverall);
+            }
+
+            const layout = {
+                title: {
+                    text: chartTitle,
+                    font: { family: 'Sarabun', size: 20 }
+                },
+                xaxis: { 
+                    title: 'อัตราคัดกรอง (%)', 
+                    titlefont: { size: 16 }, 
+                    tickfont: { size: 16 },  
+                    automargin: true,
+                    type: 'linear', 
+                    tickangle: 0, 
+                    range: [0, Math.max(100, Math.max(...percentages) * 1.2)], 
+                    gridcolor: '#e0e0e0',
+                    gridwidth: 1
+                }, 
+                yaxis: { 
+                    title: isComparisonView ? 'กลุ่มความเสี่ยง' : 'สถานบริการ', 
+                    titlefont: { size: 16 }, 
+                    automargin: true,
+                    autorange: 'reversed', 
+                    gridcolor: 'transparent', 
+                    gridwidth: 0,   
+                    showgrid: true,
+                    tickfont: { size: 16 }
+                },
+                margin: marginConfig, 
+                plot_bgcolor: '#f9fafb',
+                paper_bgcolor: '#ffffff',
+                shapes: shapes, 
+                annotations: annotations, 
+                height: useHeight, 
+                bargap: 0.1, 
+                barmode: 'stack', 
+                legend: { orientation: 'h', y: 1.02, x: 0.5, xanchor: 'center', bgcolor: 'transparent', font: { size: 16 } } 
+            };
+            
+            const config = {
+                displayModeBar: false, 
+                scrollZoom: false,    
+                modeBarButtonsToRemove: ['zoom2d', 'pan2d']
+            };
+
+            Plotly.newPlot(chartContainer, traces, layout, config);
+        }
+
+        function renderTable(data, hospitalFilter) {
+            const tableContainer = document.getElementById('table-container');
+            let html = '<table id="summaryTable" class="data-table w-full text-left">'; 
+            html += '<thead class="bg-gray-200 text-gray-700 uppercase text-xs"><tr>';
+            html += '<th class="px-6 py-3 rounded-tl-xl">สถานบริการ</th>';
+            html += '<th class="px-6 py-3">กลุ่มความเสี่ยง</th>';
+            html += '<th class="px-6 py-3 text-right">เป้าหมาย</th>';
+            html += '<th class="px-6 py-3 text-right">ผลการคัดกรอง</th>';
+            html += '<th class="px-6 py-3 text-right">เป้าคงเหลือ</th>';
+            html += '<th class="px-6 py-3 text-right rounded-tr-xl">อัตราคัดกรอง (%)</th></tr></thead><tbody>';
+
+            let dataToDisplay = [];
+            
+            if (hospitalFilter !== 'All' && data.length > 0) {
+                 // ตรวจสอบว่า data[0] มีอยู่จริงก่อน
+                 const hospitalDetails = data[0].details;
+
+                 if (hospitalDetails && hospitalDetails.length > 0) {
+                     dataToDisplay = hospitalDetails
+                        .map(detail => ({
+                            hospital: data[0].hospital,
+                            riskGroup: detail.riskGroup,
+                            target: detail.target,
+                            screened: detail.screened,
+                            remaining: detail.remaining,
+                            percentage: detail.target > 0 ? (detail.screened / detail.target) * 100 : 0
+                        }));
+                     
+                     dataToDisplay.sort((a, b) => {
+                        const numA = parseFloat(a.riskGroup.split('.')[0]);
+                        const numB = parseFloat(b.riskGroup.split('.')[0]);
+                        return numA - numB; 
+                    });
+                 }
+
+
+            } else {
+                const validData = data.filter(d => d.hospital); 
+
+                dataToDisplay = validData.map(d => ({
+                    hospital: d.hospital,
+                    riskGroup: '***รวมทั้งหมด***',
+                    target: d.totalTarget,
+                    screened: d.totalScreened,
+                    remaining: d.totalTarget - d.totalScreened,
+                    percentage: d.percentage
+                }));
+
+                dataToDisplay.sort((a, b) => b.percentage - a.percentage);
+            }
+            
+            dataToDisplay.forEach((d, index) => {
+                const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                html += `<tr class="${rowClass} hover:bg-blue-100 transition duration-150">`;
+                html += `<td class="px-6 py-4 whitespace-nowrap">${d.hospital || 'N/A'}</td>`; 
+                html += `<td class="px-6 py-4 whitespace-nowrap text-left">${d.riskGroup}</td>`;
+                html += `<td class="px-6 py-4 text-right">${d.target.toLocaleString()}</td>`;
+                html += `<td class="px-6 py-4 text-right">${d.screened.toLocaleString()}</td>`;
+                html += `<td class="px-6 py-4 text-right">${d.remaining.toLocaleString()}</td>`;
+                html += `<td class="px-6 py-4 text-right font-medium ${d.percentage > 5 ? 'text-green-600' : 'text-red-600'}">${d.percentage.toFixed(2)}%</td>`;
+                html += `</tr>`;
+            });
+
+            html += '</tbody></table>';
+            tableContainer.innerHTML = html;
+        }
+
+        function populateFilter(data) {
+            const filter = document.getElementById('hospitalFilter');
+            const hospitals = Object.keys(data);
+            
+            // เก็บค่าที่ถูกเลือกไว้ก่อนที่จะล้างตัวเลือก
+            const selectedValue = filter.value; 
+
+            filter.innerHTML = '<option value="All">-- แสดงทั้งหมด --</option>';
+
+            hospitals.sort().forEach(h => {
+                const option = document.createElement('option');
+                option.value = h;
+                option.textContent = h;
+                // ตั้งค่า option ที่ถูกเลือกไว้ก่อนหน้า
+                if (h === selectedValue) {
+                    option.selected = true;
+                }
+                filter.appendChild(option);
+            });
+        }
+
+        async function filterData() {
+            // โหลดข้อมูลจาก Firestore หรือ Local Storage ทุกครั้ง
+            MOCK_DATA = await loadAllData(); 
+            
+            // 1. ดึงค่าที่ถูกเลือกในปัจจุบัน (ต้องทำก่อน populateFilter)
+            const currentSelectedHospital = document.getElementById('hospitalFilter').value;
+            
+            // 2. เติมตัวเลือกใหม่ (populating)
+            populateFilter(MOCK_DATA);
+            
+            // 3. ตั้งค่า selected value กลับคืน
+            document.getElementById('hospitalFilter').value = currentSelectedHospital;
+
+
+            // ใช้ค่าที่เลือกมาใหม่หลังการโหลดข้อมูล
+            const selectedHospital = document.getElementById('hospitalFilter').value;
+            const processed = processData(MOCK_DATA);
+            
+            const chartsArea = document.getElementById('charts-area');
+            // NOTE: ใช้ processed.filter(d => d.hospital) เพื่อกรองเฉพาะข้อมูลที่มีชื่อโรงพยาบาลจริง
+            const validData = processed.filter(d => d.hospital);
+            const isDataEmpty = validData.length === 0 || validData.every(d => d.totalTarget === 0);
+
+
+            if (isDataEmpty) {
+                chartsArea.innerHTML = '<div class="text-center p-10 text-xl text-gray-500 bg-gray-100 rounded-lg">*** กรุณาเข้าสู่หน้า Admin เพื่อบันทึกข้อมูลเป้าหมายและการคัดกรอง ***</div>';
+                document.getElementById('table-container').innerHTML = '<div class="text-center p-10 text-xl text-gray-500">ไม่มีข้อมูลการบันทึก กรุณาเข้าสู่หน้า Admin เพื่อเริ่มต้น</div>';
+                
+                return;
+            }
+
+            chartsArea.innerHTML = ''; 
+
+            if (selectedHospital === 'All') {
+                const mainChartDiv = document.createElement('div');
+                mainChartDiv.id = 'chart-main-overall';
+                mainChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100';
+                chartsArea.appendChild(mainChartDiv);
+                
+                drawChart(processed, false, 'chart-main-overall'); 
+                renderTable(processed, 'All');
+            } else {
+                // NOTE: กรองจาก processed data ที่เป็น array of summaries
+                const hospitalData = processed.filter(d => d.hospital === selectedHospital);
+                
+                // *** FIX: ตรวจสอบข้อมูลก่อนวาดกราฟรายโรงพยาบาล ***
+                if (hospitalData.length === 0 || hospitalData[0].totalTarget === 0) {
+                     chartsArea.innerHTML = `<div class="text-center p-10 text-xl text-gray-500 bg-gray-100 rounded-lg">ไม่พบข้อมูลการคัดกรองสำหรับ ${selectedHospital}</div>`;
+                     document.getElementById('table-container').innerHTML = '';
+                     return;
+                }
+                // *** END FIX ***
+                
+                const mainChartDiv = document.createElement('div');
+                mainChartDiv.id = 'chart-main-comparison';
+                mainChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100';
+                chartsArea.appendChild(mainChartDiv);
+
+                const comparisonData = getGroupComparisonData(hospitalData);
+                drawChart(comparisonData, true, 'chart-main-comparison');
+
+                renderTable(hospitalData, selectedHospital); 
+            }
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = async function() {
+            // NOTE: เอา filterData ออกจากการเรียกตรงๆ ที่นี่
+            // แต่ให้เรียกผ่าน filterData() ทันทีที่โหลด
+            document.getElementById('hospitalFilter').addEventListener('change', filterData);
+            
+            // เรียก filterData ครั้งแรกเมื่อโหลดเสร็จ
+            await filterData(); 
+        };
+    </script>
+</body>
+</html>

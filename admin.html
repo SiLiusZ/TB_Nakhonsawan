@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - บันทึกผลคัดกรอง</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Font: Sarabun -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom font family */
+        body { font-family: 'Sarabun', sans-serif; } 
+        .hidden { display: none !important; }
+        .success { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6fb; }
+        
+        /* Sleek Button Hover Effect */
+        .btn-sleek {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn-sleek:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        .data-input { text-align: right; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <!-- Navbar -->
+    <nav class="bg-gray-800 shadow-xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <a href="report.html" class="text-white text-2xl font-extrabold tracking-wider">ADMIN PANEL</a>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-4">
+                        <a href="report.html" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition duration-150">หน้าหลัก (กราฟ)</a>
+                        <a href="admin.html" class="bg-gray-700 text-white px-3 py-2 rounded-md text-sm font-medium transition duration-150">หน้าสำหรับแอดมิน</a>
+                    </div>
+                </div>
+                <button id="logoutBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 text-sm hidden btn-sleek" onclick="window.handleLogout()">ออกจากระบบ</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="flex-grow container max-w-4xl mx-auto mt-10 p-4 sm:p-6 lg:p-8">
+        <div class="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl border border-gray-200">
+            
+            <!-- Firebase Status Panel (NEW) -->
+            <div id="firebaseStatus" class="mb-6 p-4 rounded-xl text-sm bg-blue-50 border border-blue-200">
+                <span id="authStatus" class="font-semibold text-blue-800">กำลังเชื่อมต่อ...</span>
+                <div id="configDisplay" class="mt-2 text-xs font-mono text-gray-700 break-words hidden"></div>
+            </div>
+
+            <!-- 1. หน้าจอ Login -->
+            <div id="loginView">
+                <h2 class="text-3xl font-bold text-center text-gray-900 mb-8 border-b-4 border-blue-600 pb-4">
+                    เข้าสู่ระบบผู้ดูแล
+                </h2>
+                <form id="loginForm" class="space-y-6 max-w-md mx-auto">
+                    <div>
+                        <label for="username" class="block text-sm font-semibold text-gray-700 mb-1">ชื่อผู้ใช้ (อีเมลแอดมิน)</label>
+                        <!-- NOTE: เปลี่ยนชื่อผู้ใช้เป็นอีเมลเพื่อให้ตรงกับ Firebase Auth -->
+                        <input type="email" id="username" name="username" required 
+                               class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-inner focus:ring-blue-500 focus:border-blue-500 text-lg">
+                    </div>
+
+                    <div>
+                        <label for="password" class="block text-sm font-semibold text-gray-700 mb-1">รหัสผ่าน</label>
+                        <input type="password" id="password" name="password" required 
+                               class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-inner focus:ring-blue-500 focus:border-blue-500 text-lg">
+                    </div>
+                    
+                    <button type="submit" class="w-full login-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition duration-300 shadow-lg btn-sleek">
+                        เข้าสู่ระบบด้วย Firebase Auth
+                    </button>
+                </form>
+                <div id="loginOutput" class="mt-6 p-4 rounded-xl text-center font-semibold"></div>
+            </div>
+
+            <!-- 2. หน้าจอคีย์ข้อมูล (ซ่อนไว้จนกว่าจะล็อกอิน) -->
+            <div id="keyInView" class="hidden">
+                <h2 class="text-3xl font-bold text-center text-gray-900 mb-8 border-b-4 border-green-600 pb-4">
+                    ระบบคีย์ข้อมูล: เป้าหมาย & ผลการคัดกรอง
+                </h2>
+                <form id="keyInForm" class="space-y-5">
+                    
+                    <!-- สถานบริการ Dropdown -->
+                    <div class="flex items-center space-x-4">
+                        <label for="hospital" class="text-lg font-semibold text-gray-700 self-center whitespace-nowrap">
+                            สถานบริการ:
+                        </label>
+                        <select id="hospital" name="hospital" required 
+                                class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-inner focus:ring-green-500 focus:border-green-500 text-lg">
+                            <option value="" disabled selected>เลือกสถานบริการ</option>
+                        </select>
+                    </div>
+
+                    <!-- Data Table -->
+                    <div id="dataEntryTableContainer" class="overflow-x-auto shadow-xl rounded-xl border border-gray-200 mt-6">
+                        <!-- Table will be generated here -->
+                    </div>
+                    
+                    <!-- บันทึกข้อมูล Button -->
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition duration-300 shadow-lg btn-sleek mt-8">
+                        บันทึกข้อมูล (ไปยัง Firestore หรือ Local Storage)
+                    </button>
+                    
+                    <!-- กลับไปหน้าหลัก Link -->
+                    <a href="report.html" class="block text-center w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl transition duration-300 shadow-md btn-sleek mt-4">
+                        กลับไปหน้าหลัก (กราฟ)
+                    </a>
+                </form>
+                <div id="output" class="mt-6 p-4 rounded-xl text-center font-semibold"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Insert Firebase Config Variables Here -->
+    <script>
+        // *** ค่าเหล่านี้ถูกกำหนดโดย Firebase Project ของคุณ ***
+        const __app_id = "1:743854393345:web:cc3f5ac35d595b0fbe9800"; 
+        
+        const __firebase_config = JSON.stringify({
+            apiKey: "AIzaSyBm7RaOTOvEK4bNYMEZF3U0wKKvk7Ku47M",
+            authDomain: "tbelf-54285.firebaseapp.com",
+            projectId: "tbelf-54285",
+            storageBucket: "tbelf-54285.firebasestorage.app",
+            messagingSenderId: "743854393345",
+            appId: __app_id 
+        });
+        
+        const __initial_auth_token = null; 
+    </script>
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // *** IMPORT NEW: signInWithEmailAndPassword และ onAuthStateChanged ***
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('debug'); // Enable debug logging for Firebase operations
+
+        // --- 1. CONFIG & GLOBALS ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        const HOSPITALS = [
+            "โรงพยาบาลสวรรค์ประชารักษ์", "โรงพยาบาลเก้าเลี้ยว", "โรงพยาบาลโกรกพระ", "โรงพยาบาลชุมตาบง", "โรงพยาบาลชุุมแสง", "โรงพยาบาลตากฟ้า", 
+            "โรงพยาบาลตาคลี", "โรงพยาบาลบรรพตพิสัย", "โรงพยาบาลพยุหะคีรี", "โรงพยาบาลท่าตะโก", "โรงพยาบาลไพศาลี", "โรงพยาบาลแม่วงก์", 
+            "โรงพยาบาลหนองบัว", "โรงพยาบาลลาดยาว"
+        ];
+
+        const RISK_GROUPS = [
+            "1. ผู้สัมผัสผู้ป่วยวัณโรคปอด", "2. ผู้ติดเชื้อเอชไอวี", "3. ผู้ป่วย DM HbA1C ≥ 7 mg%", "4. ผู้ป่วยโรคไตเรื้อรัง", "5. ผู้ที่ได้รับยากดภูมิ", 
+            "6. ผู้ต้องขัง", "7. ผู้สูงอายุ ≥ 65 ปี ที่มีโรคร่วมเบาหวาน", "8. ผู้สูงอายุ ≥ 65 ปี ที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD", 
+            "9. ผู้สูงอายุ ≥ 65 ปี ที่สูบบุหรี่", "10. ผู้ใช้สารเสพติด+ผู้ติดสุราเรื้อรัง", "11. บุคลากรสาธารณสุข"
+        ];
+        
+        const DATA_STORAGE_KEY = 'tbScreeningDataV2'; // Key for Local Storage
+
+        let db, auth;
+        let userId = null; // User ID is null until authenticated
+
+        // --- Firebase Config Display (NEW) ---
+        function displayFirebaseConfig() {
+            const configDiv = document.getElementById('configDisplay');
+            if (Object.keys(firebaseConfig).length > 0) {
+                const configText = `Project ID: ${firebaseConfig.projectId || 'N/A'}, App ID: ${appId}`;
+                configDiv.textContent = configText;
+                configDiv.classList.remove('hidden');
+                document.getElementById('authStatus').textContent = 'กำลังเตรียม Firebase...';
+            } else {
+                configDiv.textContent = 'Config data is not available. Using Local Storage.';
+                configDiv.classList.remove('hidden');
+                document.getElementById('authStatus').textContent = 'ไม่ได้เชื่อมต่อ Firebase (ใช้ Local Mock Data)';
+                document.getElementById('authStatus').classList.remove('text-blue-800');
+                document.getElementById('authStatus').classList.add('text-yellow-700');
+            }
+        }
+
+
+        // --- 2. FIREBASE INITIALIZATION & AUTH ---
+        if (Object.keys(firebaseConfig).length > 0) {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            // ใช้ onAuthStateChanged เพื่อจัดการสถานะการล็อกอินทั้งหมด
+            onAuthStateChanged(auth, (user) => {
+                const statusDiv = document.getElementById('authStatus');
+                if (user) {
+                    // ผู้ใช้ล็อกอินสำเร็จ
+                    userId = user.uid;
+                    statusDiv.textContent = `เชื่อมต่อ Firebase สำเร็จ! (Admin UID: ${userId.substring(0, 8)}...)`;
+                    statusDiv.classList.remove('text-blue-800', 'text-yellow-700', 'text-red-700');
+                    statusDiv.classList.add('text-green-700');
+                    
+                    // แสดงหน้าคีย์ข้อมูลหลังจากล็อกอินสำเร็จ
+                    displayAdminView(true);
+                } else {
+                    // ผู้ใช้ยังไม่ได้ล็อกอินหรือล็อกเอาท์
+                    userId = null;
+                    statusDiv.textContent = 'รอการเข้าสู่ระบบ...';
+                    statusDiv.classList.remove('text-green-700', 'text-red-700');
+                    statusDiv.classList.add('text-blue-800');
+                    displayAdminView(false);
+                }
+            });
+
+        } else {
+            console.warn("Firebase configuration not found. Using Local Storage only.");
+            // db remains undefined, triggering Local Storage fallback
+        }
+
+        // --- 3. DATA HANDLERS (Firestore Operations) ---
+        
+        function getHospitalDocRef(hospitalName) {
+            const collectionPath = `artifacts/${appId}/public/data/tbScreening`;
+            // NOTE: เราใช้ public data เพราะต้องการให้ข้อมูลของทุกโรงพยาบาลถูกแชร์และอ่านได้โดยทุกคน
+            return doc(db, collectionPath, hospitalName);
+        }
+
+        // --- Local Storage Fallbacks ---
+        function generateInitialDataStructure() {
+            const initialData = {};
+            HOSPITALS.forEach(h => {
+                initialData[h] = {};
+                RISK_GROUPS.forEach(r => {
+                    initialData[h][r] = { target: 0, screened: 0 };
+                });
+            });
+            return initialData;
+        }
+
+        function loadDataFromLocalStorage() {
+            const storedData = localStorage.getItem(DATA_STORAGE_KEY);
+            let allData = storedData ? JSON.parse(storedData) : generateInitialDataStructure();
+            return allData;
+        }
+
+        function saveDataToLocalStorage(hospitalName, dataToSave) {
+            let allData = loadDataFromLocalStorage();
+            allData[hospitalName] = dataToSave;
+            localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(allData));
+            return true;
+        }
+
+        // --- Main Load/Save Logic (Uses Firestore or Fallback) ---
+        async function loadSpecificDataForHospital(hospitalName) {
+            // ต้องมี db และ auth.currentUser เพื่อให้มั่นใจว่ามีสิทธิ์อ่าน
+            if (db && auth.currentUser) {
+                 try {
+                    const docRef = getHospitalDocRef(hospitalName);
+                    const docSnap = await getDoc(docRef);
+
+                    if (docSnap.exists()) {
+                        return docSnap.data();
+                    }
+                } catch (error) {
+                    console.error("Error loading data from Firestore, falling back:", error);
+                    // Continue to Local Storage fallback
+                }
+            } 
+            
+            // Local Storage Fallback: Load the specific hospital's data from the Local Storage object
+            const allLocalData = loadDataFromLocalStorage();
+            return allLocalData[hospitalName] || {};
+        }
+        
+        async function saveData(hospitalName, dataToSave) {
+            // ต้องมี db และ userId เพื่อใช้ในการบันทึก
+            if (db && userId) {
+                try {
+                    const docRef = getHospitalDocRef(hospitalName);
+                    await setDoc(docRef, dataToSave);
+                    return true;
+                } catch (error) {
+                    console.error("Error saving data to Firestore, falling back to Local Storage:", error);
+                    // Continue to Local Storage fallback
+                }
+            }
+            
+            // Local Storage Fallback
+            return saveDataToLocalStorage(hospitalName, dataToSave);
+        }
+
+        // --- 4. ADMIN VIEW LOGIC (EXPOSED GLOBALLY) ---
+        
+        window.handleLogout = async function() {
+            // ไม่ต้องใช้ sessionStorage.removeItem('adminLoggedIn') อีกต่อไป
+            document.getElementById('output').textContent = '';
+            document.getElementById('loginForm').reset();
+            try {
+                if (auth) await signOut(auth); // Firebase will handle UI via onAuthStateChanged
+            } catch (e) {
+                console.error("Sign out failed:", e);
+            }
+        }
+
+        window.loadSpecificData = async function() {
+            const hospital = document.getElementById('hospital').value;
+            const tableContainer = document.getElementById('dataEntryTableContainer');
+            
+            if (hospital === "") {
+                tableContainer.innerHTML = '';
+                return;
+            }
+
+            const currentData = await loadSpecificDataForHospital(hospital);
+            renderDataEntryTable(hospital, currentData);
+        }
+
+        function renderDataEntryTable(hospitalName, data) {
+            let html = `
+                <table id="dataEntryTable" class="w-full text-left bg-white">
+                    <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-3 border-r">กลุ่มความเสี่ยง (${hospitalName})</th>
+                            <th class="px-4 py-3 text-right border-r">เป้าหมาย (ราย)</th>
+                            <th class="px-4 py-3 text-right">ผลการคัดกรอง (ราย)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            RISK_GROUPS.forEach((r, index) => {
+                const cleanId = r.replace(/[^a-zA-Z0-9]/g, '_');
+                const riskGroupName = r;
+                // Ensure rowData is based on data structure from Local Storage/Firestore V2
+                const rowData = data[r] || { target: 0, screened: 0 }; 
+                const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+
+                html += `
+                    <tr class="${rowClass} hover:bg-gray-100">
+                        <td class="px-4 py-3 font-semibold text-gray-800">${riskGroupName}</td>
+                        <td class="px-4 py-3">
+                            <input type="number" name="target_${cleanId}" data-group="${r}" value="${rowData.target}" min="0" required
+                                class="w-full data-input px-2 py-1 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 text-sm"
+                            />
+                        </td>
+                        <td class="px-4 py-3">
+                            <input type="number" name="screened_${cleanId}" data-group="${r}" value="${rowData.screened}" min="0" required
+                                class="w-full data-input px-2 py-1 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 text-sm"
+                            />
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('dataEntryTableContainer').innerHTML = html;
+        }
+
+        async function handleKeyInSubmit(e) {
+            e.preventDefault();
+            const form = document.getElementById('keyInForm');
+            const hospitalName = form.hospital.value;
+            const outputDiv = document.getElementById('output');
+            outputDiv.className = 'mt-6 p-4 rounded-xl text-center font-semibold';
+            outputDiv.textContent = 'กำลังบันทึกข้อมูล...';
+            outputDiv.classList.remove('error');
+            outputDiv.classList.add('success'); 
+            
+            // ตรวจสอบว่าล็อกอินแล้วและมีสิทธิ์บันทึก (userId ถูกกำหนดโดย onAuthStateChanged)
+            if (!userId) {
+                outputDiv.textContent = `ข้อผิดพลาด: กรุณาล็อกอินก่อนทำการบันทึกข้อมูล`;
+                outputDiv.classList.remove('success');
+                outputDiv.classList.add('error');
+                return;
+            }
+
+            const table = document.getElementById('dataEntryTableContainer');
+            const inputs = table.querySelectorAll('input[type="number"]');
+            
+            const dataToSave = {};
+
+            // 1. Collect data from table inputs
+            RISK_GROUPS.forEach(r => {
+                dataToSave[r] = {
+                    target: 0,
+                    screened: 0
+                };
+            });
+            
+            inputs.forEach(input => {
+                const groupName = input.getAttribute('data-group');
+                const value = parseInt(input.value) || 0;
+                
+                if (input.name.startsWith('target_')) {
+                    dataToSave[groupName].target = value;
+                } else if (input.name.startsWith('screened_')) {
+                    dataToSave[groupName].screened = value;
+                }
+            });
+            
+            // 2. Save data to Firestore or Local Storage
+            const success = await saveData(hospitalName, dataToSave);
+
+            if (success) {
+                const saveMethod = db ? 'Firestore' : 'Local Storage';
+                outputDiv.textContent = `ข้อมูลของ ${hospitalName} บันทึกสำเร็จใน ${saveMethod}!`;
+            } else {
+                outputDiv.textContent = `ข้อผิดพลาดในการบันทึกข้อมูลของ ${hospitalName}`;
+                outputDiv.classList.remove('success');
+                outputDiv.classList.add('error');
+            }
+        }
+
+        // --- 5. INITIALIZATION ---
+        function setupDropdowns() {
+            const hospitalSelect = document.getElementById('hospital');
+            const createOption = (value, text, parent) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = text;
+                parent.appendChild(option);
+            };
+
+            hospitalSelect.innerHTML = '<option value="" disabled selected>เลือกสถานบริการ</option>';
+            [...HOSPITALS].sort().forEach(h => createOption(h, h, hospitalSelect));
+            
+            hospitalSelect.addEventListener('change', window.loadSpecificData);
+        }
+
+        // แก้ไขฟังก์ชันแสดงผล UI ให้ขึ้นอยู่กับ Firebase Auth State
+        function displayAdminView(isLoggedIn) {
+            const loginView = document.getElementById('loginView');
+            const keyInView = document.getElementById('keyInView');
+            const logoutBtn = document.getElementById('logoutBtn');
+
+            if (isLoggedIn) {
+                loginView.classList.add('hidden');
+                keyInView.classList.remove('hidden');
+                logoutBtn.classList.remove('hidden');
+                setupDropdowns();
+                // โหลดข้อมูลล่าสุดทันทีหลังล็อกอิน
+                if (document.getElementById('hospital').value) {
+                    window.loadSpecificData();
+                }
+            } else {
+                loginView.classList.remove('hidden');
+                keyInView.classList.add('hidden');
+                logoutBtn.classList.add('hidden');
+            }
+        }
+
+        // *** แก้ไข: ใช้ Firebase Auth แทน Hardcoded Login ***
+        async function handleLogin(e) {
+            e.preventDefault();
+            const form = document.getElementById('loginForm');
+            const email = form.username.value;
+            const password = form.password.value;
+            const loginOutput = document.getElementById('loginOutput');
+
+            loginOutput.classList.remove('success', 'error');
+            loginOutput.textContent = 'กำลังตรวจสอบสิทธิ์ Firebase...';
+
+            if (!auth) {
+                loginOutput.textContent = 'Firebase Auth ไม่พร้อมใช้งาน (โปรดตรวจสอบ Config)';
+                loginOutput.classList.add('error');
+                return;
+            }
+
+            try {
+                // ใช้ Firebase function ในการล็อกอินด้วย Email และ Password
+                await signInWithEmailAndPassword(auth, email, password);
+                
+                // onAuthStateChanged จะจัดการการแสดงผล UI เมื่อสำเร็จ
+                loginOutput.textContent = 'เข้าสู่ระบบสำเร็จ! กำลังโหลดหน้า Admin...';
+                loginOutput.classList.add('success');
+            } catch (error) {
+                console.error("Firebase Login Failed:", error);
+                
+                let errorMessage;
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    errorMessage = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'รูปแบบอีเมลไม่ถูกต้อง';
+                } else {
+                    errorMessage = `ข้อผิดพลาด: ${error.message}`;
+                }
+
+                loginOutput.textContent = errorMessage;
+                loginOutput.classList.remove('success');
+                loginOutput.classList.add('error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            displayFirebaseConfig();
+            document.getElementById('loginForm').addEventListener('submit', handleLogin);
+            document.getElementById('keyInForm').addEventListener('submit', handleKeyInSubmit);
+            
+            // onAuthStateChanged จะจัดการ displayAdminView() แทน checkLoginStatus()
+        });
+    </script>
+</body>
+</html>
