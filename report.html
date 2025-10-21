@@ -196,7 +196,7 @@
         ];
         
         const SUCCESS_THRESHOLDS = {
-            "0. ภาพรวม (ทั้งหมด)": 80, 
+            "0. ภาพรวม (ทั้งหมด)": 90, // อัปเดตจาก 80 เป็น 90
             "1. ผู้สัมผัสผู้ป่วยวัณโรคปอด": 70, 
             "2. ผู้ติดเชื้อเอชไอวี": 100,      
             "3. ผู้ป่วย DM HbA1C ≥ 7 mg%": 90, 
@@ -277,7 +277,8 @@
         // --- AI Analysis Logic ---
 
         // Function to handle API calls with exponential backoff
-        async function fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+        // MODIFIED: Increase retries to 8 and starting delay to 3000ms for better 503 handling
+        async function fetchWithBackoff(url, options, retries = 8, delay = 3000) {
             for (let i = 0; i < retries; i++) {
                 try {
                     const response = await fetch(url, options);
@@ -632,7 +633,7 @@
                     type: 'bar',
                     orientation: orientation,
                     marker: { 
-                        color: data.map(d => d.percentage >= 80 ? '#059669' : '#dc2626'), 
+                        color: data.map(d => d.percentage >= 90 ? '#059669' : '#dc2626'), // อัปเดตจาก 80 เป็น 90
                         line: { color: 'white', width: 1 }
                     }, 
                     text: percentages.map(p => `${p.toFixed(2)}%`), 
@@ -645,12 +646,12 @@
                 
                  shapes.push({
                     type: 'line',
-                    xref: 'x', yref: 'paper', x0: 80, x1: 80, y0: 0, y1: 1, 
+                    xref: 'x', yref: 'paper', x0: 90, x1: 90, y0: 0, y1: 1, // อัปเดตจาก 80 เป็น 90
                     line: { color: 'red', width: 2, dash: 'dash' }
                 });
                 annotations.push({
-                    xref: 'x', yref: 'paper', x: 80, y: 1.05, 
-                    text: 'เป้าหมาย 80%', showarrow: false, 
+                    xref: 'x', yref: 'paper', x: 90, y: 1.05, // อัปเดตจาก 80 เป็น 90
+                    text: 'เป้าหมาย 90%', showarrow: false, 
                     xanchor: 'left', font: { color: 'red', size: 14, family: 'Sarabun, sans-serif' }
                 });
 
@@ -873,12 +874,11 @@
         }
 
         async function filterData() {
+            // โหลดและประมวลผลข้อมูลหลัก (เร็ว)
             MOCK_DATA = await loadAllData(); 
-            
             const currentSelectedHospital = document.getElementById('hospitalFilter').value;
             populateFilter(MOCK_DATA);
             document.getElementById('hospitalFilter').value = currentSelectedHospital;
-
 
             const selectedHospital = document.getElementById('hospitalFilter').value;
             const processed = processData(MOCK_DATA);
@@ -899,17 +899,16 @@
                 return;
             }
 
+            // วาดกราฟและตาราง (เร็ว)
             chartsArea.innerHTML = ''; 
 
             if (selectedHospital === 'All') {
-                // กราฟที่ 1: ภาพรวมรายสถานบริการ
                 const mainChartDiv = document.createElement('div');
                 mainChartDiv.id = 'chart-main-overall';
                 mainChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100';
                 chartsArea.appendChild(mainChartDiv);
                 drawChart(processed, false, 'chart-main-overall'); 
                 
-                // กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (NEW)
                 const overallGroupData = getOverallGroupData(MOCK_DATA);
                 const groupChartDiv = document.createElement('div');
                 groupChartDiv.id = 'chart-group-comparison';
@@ -917,15 +916,14 @@
                 chartsArea.appendChild(groupChartDiv);
                 drawChart(overallGroupData, true, 'chart-group-comparison', 'อัตราการคัดกรองรวม: แยกตามกลุ่มความเสี่ยง (ทุกสถานบริการรวมกัน)');
                 
-                // ตารางสรุปภาพรวมทั้งหมด
                 renderTable(processed, 'All');
                 
-                // *** NEW: 3. AI Analysis ***
-                await generateAIAnalysis(processed, overallGroupData, selectedHospital);
+                // *** 3. AI Analysis (NON-BLOCKING) ***
+                // เราจะเรียกฟังก์ชันโดยไม่มี await เพื่อให้โค้ดส่วนอื่นทำงานต่อทันที
+                generateAIAnalysis(processed, overallGroupData, selectedHospital);
 
 
             } else {
-                // กราฟที่ 3: รายโรงพยาบาล (Group Comparison)
                 const hospitalData = processed.filter(d => d.hospital === selectedHospital);
                 
                 if (hospitalData.length === 0 || hospitalData[0].totalTarget === 0) {
@@ -942,17 +940,18 @@
                 const comparisonData = getGroupComparisonData(hospitalData);
                 drawChart(comparisonData, true, 'chart-main-comparison');
 
-                // ตารางสรุปรายกลุ่มเสี่ยงของโรงพยาบาลที่เลือก
                 renderTable(hospitalData, selectedHospital); 
                 
-                // *** NEW: 3. AI Analysis *** (จะแสดงข้อความว่าให้เลือก 'แสดงทั้งหมด')
-                await generateAIAnalysis(processed, [], selectedHospital);
+                // *** 3. AI Analysis *** (เรียกแบบ Non-blocking เช่นกัน)
+                generateAIAnalysis(processed, [], selectedHospital);
             }
         }
 
         // --- INITIALIZATION ---
         window.onload = async function() {
             await filterData(); 
+            // NOTE: event listener ถูกเพิ่มใน HTML (onchange="filterData()") อยู่แล้ว 
+            // แต่ควรเพิ่มตรงนี้เพื่อความชัดเจน (ถึงแม้ใน HTML จะมีอยู่แล้วก็ตาม)
             document.getElementById('hospitalFilter').addEventListener('change', filterData);
         };
     </script>
