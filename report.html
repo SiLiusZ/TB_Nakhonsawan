@@ -48,6 +48,29 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
         }
+        
+        /* เพิ่มสไตล์สำหรับผลลัพธ์ Markdown ที่แปลงแล้ว */
+        #ai-analysis-output h4 {
+            font-size: 1.5rem; /* text-xl */
+            font-weight: 700; /* font-bold */
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            color: #1f2937; /* gray-800 */
+        }
+        /* NEW: Style for paragraphs created by conversion */
+        #ai-analysis-output p {
+            margin-bottom: 1rem;
+        }
+        /* Style for Ordered Lists */
+        #ai-analysis-output ol {
+            list-style-type: decimal;
+            margin-left: 1.5rem;
+            padding-left: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        #ai-analysis-output li {
+            margin-bottom: 0.5rem;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -89,14 +112,13 @@
             </div>
 
             <!-- Chart Container (Plotly) -->
-            <!-- Use chart-main-overall ID for single chart -->
             <div id="charts-area" class="flex flex-wrap justify-center -mx-2 mb-12">
                 <!-- กราฟที่ 1: อัตราคัดกรองรวมรายสถานบริการ -->
                 <div id="chart-main-overall" class="chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100">
                     <!-- Plotly chart will be injected here (used for Overall View) -->
                 </div>
                 
-                <!-- NEW CHART CONTAINER: กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (แสดงเฉพาะเมื่อเลือก All) -->
+                <!-- กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (แสดงเฉพาะเมื่อเลือก All) -->
                 <div id="chart-group-comparison" class="chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100">
                     <!-- Plotly chart will be injected here (used for Overall Group Comparison) -->
                 </div>
@@ -109,6 +131,22 @@
                     <!-- Table will be rendered here -->
                 </div>
             </div>
+            
+            <!-- NEW AI ANALYSIS SECTION -->
+            <div class="mt-10 bg-white p-6 rounded-2xl shadow-2xl border border-gray-200">
+                <h3 class="text-2xl font-bold text-gray-700 mb-4 border-b-2 pb-2 text-center sm:text-left">
+                    การวิเคราะห์ผลเชิงลึกโดย AI (Deep Analysis)
+                </h3>
+                <!-- Title and date are generated here before the main output -->
+                <div class="text-sm text-gray-500 mb-4 border-b pb-2">
+                    รายงานการวิเคราะห์ข้อมูลโครงการคัดกรองวัณโรคเชิงรุก วันที่: **21 ตุลาคม 2568**
+                </div>
+                <div id="ai-analysis-output" class="text-gray-800 text-lg leading-relaxed min-h-[100px] flex items-center justify-center">
+                    <!-- AI Analysis content or loading indicator -->
+                    <span class="text-gray-500">รอการประมวลผลการวิเคราะห์...</span>
+                </div>
+            </div>
+            
         </div>
     </div>
 
@@ -118,7 +156,8 @@
         const __app_id = "1:743854393345:web:cc3f5ac35d595b0fbe9800"; 
         
         const __firebase_config = JSON.stringify({
-            apiKey: "AIzaSyBm7RaOTOvEK4bNYMEZF3U0wKKvk7Ku47M",
+            // *** API KEY ล่าสุดที่คุณให้มา: คีย์นี้ใช้สำหรับ Firebase และจะถูกใช้เรียก Gemini API ***
+            apiKey: "AIzaSyD36zBXb8nF2rBwQlKVpHzgq5_2bg7j9cE", 
             authDomain: "tbelf-54285.firebaseapp.com",
             projectId: "tbelf-54285",
             storageBucket: "tbelf-54285.firebasestorage.app",
@@ -132,7 +171,6 @@
     <!-- Firebase SDK Imports and Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // REMOVED AUTH IMPORTS: ลบการนำเข้า Auth ทั้งหมดออก
         import { getFirestore, collection, query, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         setLogLevel('debug'); // Enable debug logging for Firebase operations
@@ -140,10 +178,9 @@
         // --- GLOBAL VARIABLES (Config from <script> block) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        // REMOVED: initialAuthToken is no longer needed
         
-        let db; // Removed 'auth'
-        let MOCK_DATA = {}; // Global data container
+        let db; 
+        let MOCK_DATA = {}; 
         
         // --- โครงสร้างข้อมูลหลัก (คัดลอกมาจาก report.html เดิม) ---
         const HOSPITALS = [
@@ -187,7 +224,6 @@
             const statusDiv = document.getElementById('dataStatus');
             statusDiv.textContent = 'กำลังเชื่อมต่อและโหลดข้อมูล...';
             
-            // Local Storage Fallback structure (copied from admin.html)
             function generateInitialDataStructure() {
                 const initialData = {};
                 HOSPITALS.forEach(h => {
@@ -199,7 +235,6 @@
                 return initialData;
             }
 
-            // Local Storage Load
             function loadDataFromLocalStorage() {
                 const storedData = localStorage.getItem(DATA_STORAGE_KEY);
                 return storedData ? JSON.parse(storedData) : generateInitialDataStructure();
@@ -210,7 +245,6 @@
                     const app = initializeApp(firebaseConfig);
                     db = getFirestore(app);
                     
-                    // NOTE: โค้ดที่ดึงข้อมูลโดยไม่มีการรับรองตัวตน (Unauthenticated Read)
                     const collectionRef = collection(db, getCollectionPath());
                     const q = query(collectionRef);
                     const querySnapshot = await getDocs(q);
@@ -226,12 +260,10 @@
                     return firestoreData;
                     
                 } catch (error) {
-                    // หากเกิดข้อผิดพลาดในการโหลด (เช่น Security Rules ไม่ถูกต้อง)
                     console.error("Error loading data from Firestore, falling back to Local Storage:", error);
                     statusDiv.textContent = `ข้อผิดพลาดในการโหลดข้อมูลจาก Firestore (ใช้ Local Data แทน)`;
                     statusDiv.classList.remove('text-blue-800', 'text-green-700', 'text-yellow-700');
                     statusDiv.classList.add('text-red-700');
-                    // Fallback
                     return loadDataFromLocalStorage();
                 }
             } else {
@@ -241,6 +273,157 @@
                 return loadDataFromLocalStorage();
             }
         }
+
+        // --- AI Analysis Logic ---
+
+        // Function to handle API calls with exponential backoff
+        async function fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return response;
+                    }
+                    if (i < retries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; 
+                        continue;
+                    }
+                    throw new Error(`API request failed with status ${response.status}: ${await response.text()}`);
+                } catch (error) {
+                    if (i === retries - 1) {
+                        throw error;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function generateAIAnalysis(processedHospitalData, overallGroupData, hospitalSelected) {
+            const outputDiv = document.getElementById('ai-analysis-output');
+            outputDiv.classList.remove('text-red-600', 'text-gray-800');
+            outputDiv.classList.add('text-gray-500');
+            outputDiv.innerHTML = '<div class="flex flex-col items-center"><svg class="animate-spin h-5 w-5 text-blue-500 mr-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>กำลังประมวลผลการวิเคราะห์เชิงลึกโดย AI...</span></div>';
+
+            if (hospitalSelected !== 'All') {
+                outputDiv.innerHTML = '<span class="text-gray-500">การวิเคราะห์เชิงลึกโดย AI จะแสดงเมื่อเลือก "แสดงทั้งหมด"</span>';
+                return;
+            }
+
+            try {
+                // --- 1. Data Preparation ---
+                const hospitalSummary = processedHospitalData.map(d => ({
+                    hospital: d.hospital,
+                    percentage: parseFloat(d.percentage.toFixed(2)),
+                    totalTarget: d.totalTarget,
+                    totalScreened: d.totalScreened,
+                }));
+
+                const riskGroupSummary = overallGroupData
+                    .filter(d => d.originalLabel !== "0. ภาพรวม (ทั้งหมด)") 
+                    .map(d => ({
+                        riskGroup: d.originalLabel,
+                        percentage: parseFloat(d.percentage.toFixed(2)),
+                        targetPct: d.targetPct,
+                        totalTarget: d.target,
+                        totalScreened: d.screened,
+                    }));
+                
+                // --- 2. Prompt Construction (ADJUSTED PROMPT FOR NUMBERED PARAGRAPHS) ---
+                const systemPrompt = "Act as a public health data analyst specializing in Tuberculosis (TB) screening programs. Your task is to analyze the provided screening data (Hospital performance and Risk Group performance) and generate a concise, actionable report in Thai. The report must contain three prioritized sections: 1. Key Successes (Best Performers/Groups exceeding targets). 2. Key Challenges (Worst Performers/Groups significantly below targets). 3. Top 3 Actionable Recommendations. CRITICAL: The content within Key Successes and Key Challenges sections MUST be formatted as a single numbered list (1., 2., 3., ...) where each numbered item is a complete, descriptive paragraph explaining a finding or challenge. Do NOT use bullet points or extra line breaks within the numbered paragraphs.";
+
+                const userQuery = `Analyze the following TB screening data:
+                
+                A. Hospital Overall Performance (Sorted by percentage, descending):
+                ${JSON.stringify(hospitalSummary)}
+
+                B. Risk Group Performance (Including specific target percentages, sorted by priority):
+                ${JSON.stringify(riskGroupSummary)}
+
+                Provide the analysis structured as requested in the system instructions. Ensure the output is readable and in Thai (Markdown format is preferred for readability).`;
+
+                // ** FIX: Use the actual apiKey from the firebaseConfig variable **
+                const apiKey = firebaseConfig.apiKey || ""; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                };
+
+                // --- 3. API Call ---
+                const response = await fetchWithBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                const generatedText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                // --- 4. Render Output (ADJUSTED CONVERSION FOR NUMBERED PARAGRAPHS) ---
+                if (generatedText) {
+                    let htmlContent = generatedText;
+                    
+                    // 1. Convert Headers (###) to <h4>
+                    htmlContent = htmlContent.replace(/###\s*(.*)/g, '<h4>$1</h4>');
+                    
+                    // 2. Convert Bold (**Text**) to <strong>Text</strong>
+                    htmlContent = htmlContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); 
+
+                    // 3. Convert Numbered List items (1. Text) to <li> tags
+                    // Look for numbers followed by a dot and space at the start of a line
+                    htmlContent = htmlContent.replace(/^(\d+\.)\s+(.*)/gm, '<li><strong>$1</strong> $2</li>');
+
+                    // 4. Wrap blocks of <li> elements into <ol> tags
+                    // This relies on the numbered lists being contiguous (which the prompt mandates)
+                    htmlContent = htmlContent.replace(/(<li>.*<\/li>(\s*<li>.*<\/li>)*)/g, '<ol>$1</ol>');
+                    
+                    // 5. Convert remaining consecutive newlines (\n\n) to Paragraphs (<p>...</p>)
+                    // Note: Since we are asking the model to write paragraphs, we expect most content to be block-level (either <h4>, <ol>, or separated by \n\n).
+
+                    // Wrap the entire content in a temporary div to simplify paragraph detection
+                    htmlContent = `<div>${htmlContent}</div>`;
+                    
+                    // Replace all triple+ newlines with double newlines
+                    htmlContent = htmlContent.replace(/\n\s*\n\s*\n/g, '\n\n');
+                    
+                    // Split content by double newline (paragraph break)
+                    htmlContent = htmlContent.split('\n\n').map(p => {
+                        // Check if the block already starts with a block-level tag
+                        if (p.startsWith('<h4>') || p.startsWith('<ol>') || p.trim() === '') {
+                            return p;
+                        }
+                        // Wrap remaining text blocks in <p> tags
+                        // Replace single newlines within a block with spaces for proper paragraph flow
+                        return `<p>${p.replace(/\n/g, ' ')}</p>`; 
+                    }).join('');
+
+                    // Remove temporary div and clean up unnecessary line breaks
+                    htmlContent = htmlContent.replace(/^<div>/, '').replace(/<\/div>$/, '');
+                    
+                    // Final cleanup: remove residual standalone newlines 
+                    htmlContent = htmlContent.replace(/\n/g, '');
+
+
+                    outputDiv.innerHTML = htmlContent;
+                    outputDiv.classList.remove('text-gray-500');
+                    outputDiv.classList.add('text-gray-800');
+                } else {
+                    throw new Error("Failed to extract analysis text from API response.");
+                }
+
+            } catch (error) {
+                console.error("AI Analysis failed:", error);
+                outputDiv.innerHTML = `<span class="font-bold">ข้อผิดพลาดในการวิเคราะห์ข้อมูล:</span> ไม่สามารถเชื่อมต่อหรือประมวลผลข้อมูล AI ได้ (${error.message})`;
+                outputDiv.classList.remove('text-gray-500');
+                outputDiv.classList.add('text-red-600');
+            }
+        }
+
 
         // --- Data Processor (เดิม) ---
         function processData(dataToProcess) {
@@ -282,11 +465,10 @@
             return chartData;
         }
         
-        // --- NEW FUNCTION: Get Overall Group Comparison Data ---
+        // --- NEW FUNCTION: Get Overall Group Comparison Data (เดิม) ---
         function getOverallGroupData(dataToProcess) {
             const overallGroupSummary = {};
 
-            // 1. รวม Target และ Screened ของทุกโรงพยาบาลเข้าด้วยกันตามกลุ่มเสี่ยง
             for (const hospital in dataToProcess) {
                 const riskGroupDetails = dataToProcess[hospital];
                 for (const riskGroup in riskGroupDetails) {
@@ -303,7 +485,6 @@
                 }
             }
 
-            // 2. คำนวณเปอร์เซ็นต์และเตรียมข้อมูลสำหรับ Plotly
             const chartData = [];
             for (const riskGroup in overallGroupSummary) {
                 const { target, screened } = overallGroupSummary[riskGroup];
@@ -320,7 +501,6 @@
                 });
             }
             
-            // 3. เพิ่มภาพรวม (ทั้งหมด)
             const totalTarget = chartData.reduce((sum, d) => sum + d.target, 0);
             const totalScreened = chartData.reduce((sum, d) => sum + d.screened, 0);
             const overallPercentage = totalTarget > 0 ? (totalScreened / totalTarget) * 100 : 0;
@@ -335,7 +515,6 @@
                 targetPct: SUCCESS_THRESHOLDS[overallLabel] || 100
             });
             
-            // 4. จัดเรียงตาม Custom Priority
             chartData.sort((a, b) => {
                 const priorityA = getCustomSortPriority(a.originalLabel);
                 const priorityB = getCustomSortPriority(b.originalLabel);
@@ -417,7 +596,7 @@
             return comparisonData;
         }
 
-        // --- Plotly Chart Rendering Logic (ปรับปรุงเล็กน้อยเพื่อรองรับกราฟใหม่) ---
+        // --- Plotly Chart Rendering Logic (เดิม) ---
         function drawChart(data, isComparisonView, targetDivId = 'chart-main-overall', titleOverride = null) {
             const chartContainer = document.getElementById(targetDivId);
             
@@ -433,7 +612,6 @@
                 return;
             }
 
-            // คำนวณความสูง
             const isOverallHospitalView = targetDivId === 'chart-main-overall';
             const isOverallGroupView = targetDivId === 'chart-group-comparison';
 
@@ -441,9 +619,7 @@
             const rowHeight = 40;
             let calculatedHeight = Math.max(baseHeight, data.length * rowHeight + 120);
 
-            // 2. Data Setup and Margin Configuration
             if (isOverallHospitalView) {
-                // กราฟที่ 1: ภาพรวมรายสถานบริการ
                 labels = data.map(d => d.hospital);
                 percentages = data.map(d => d.percentage);
                 chartTitle = 'อัตราการคัดกรองวัณโรคตามกลุ่มเสี่ยง (ภาพรวม)';
@@ -456,7 +632,7 @@
                     type: 'bar',
                     orientation: orientation,
                     marker: { 
-                        color: data.map(d => d.percentage >= 80 ? '#059669' : '#dc2626'), // สีตาม Threshold 80%
+                        color: data.map(d => d.percentage >= 80 ? '#059669' : '#dc2626'), 
                         line: { color: 'white', width: 1 }
                     }, 
                     text: percentages.map(p => `${p.toFixed(2)}%`), 
@@ -467,13 +643,9 @@
                 };
                 traces.push(traceOverall);
                 
-                // เพิ่มเส้นเป้าหมาย 80%
                  shapes.push({
                     type: 'line',
-                    xref: 'x', 
-                    yref: 'paper',
-                    x0: 80, x1: 80, 
-                    y0: 0, y1: 1, 
+                    xref: 'x', yref: 'paper', x0: 80, x1: 80, y0: 0, y1: 1, 
                     line: { color: 'red', width: 2, dash: 'dash' }
                 });
                 annotations.push({
@@ -484,7 +656,6 @@
 
 
             } else if (isOverallGroupView) {
-                 // กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (ใช้ logic เดียวกับ Comparison View แต่ไม่มี Hospital Name)
                 labels = data.map(d => d.label);
                 percentages = data.map(d => d.percentage);
                 chartTitle = 'อัตราการคัดกรองรวม: แยกตามกลุ่มความเสี่ยง (ทุกสถานบริการรวมกัน)';
@@ -499,7 +670,7 @@
                     marker: { 
                         color: data.map(d => {
                             const targetPct = d.targetPct || 0;
-                            return d.percentage >= targetPct ? '#10b981' : '#f59e0b'; // Emerald (Success) or Amber (Failure)
+                            return d.percentage >= targetPct ? '#10b981' : '#f59e0b'; 
                         }),
                         line: { color: 'white', width: 1 }
                     },
@@ -511,16 +682,13 @@
                 };
                 traces.push(traceScreening);
                 
-                // Target Lines (ใช้ logic เดียวกับ Comparison View)
                 const uniqueTargets = [...new Set(data.map(d => d.targetPct))].filter(t => t > 0);
 
                 uniqueTargets.forEach(target => {
                     data.forEach((d, index) => {
                         if (d.targetPct === target) {
                             shapes.push({
-                                type: 'line',
-                                xref: 'x', 
-                                yref: 'y',
+                                type: 'line', xref: 'x', yref: 'y',
                                 x0: target, x1: target, 
                                 y0: index - 0.2, y1: index + 0.2, 
                                 line: { color: 'red', width: 2, dash: 'dot' }
@@ -541,7 +709,6 @@
                 });
 
             } else {
-                // กราฟที่ 3: รายสถานบริการ (Group Comparison) (ไม่เปลี่ยนแปลง)
                 labels = data.map(d => d.label);
                 percentages = data.map(d => d.percentage);
                 chartTitle = titleOverride || `อัตราการคัดกรอง: ${data[0].hospital} (แยกตามกลุ่มเสี่ยง)`;
@@ -574,10 +741,8 @@
                     data.forEach((d, index) => {
                         if (d.targetPct === target) {
                             shapes.push({
-                                type: 'line',
-                                xref: 'x', yref: 'y',
-                                x0: target, x1: target, 
-                                y0: index - 0.2, y1: index + 0.2, 
+                                type: 'line', xref: 'x', yref: 'y',
+                                x0: target, x1: target, y0: index - 0.2, y1: index + 0.2, 
                                 line: { color: 'red', width: 2, dash: 'dot' }
                             });
                             const isPriorityGroup = d.originalLabel.includes('0. ภาพรวม') || d.originalLabel.includes('1. ผู้สัมผัส') || d.originalLabel.includes('2. ผู้ติดเชื้อ') || d.originalLabel.includes('6. ผู้ต้องขัง');
@@ -594,7 +759,6 @@
                 });
             }
 
-            // 4. Plotly Layout Configuration
             const layout = {
                 title: { text: chartTitle, font: { family: 'Sarabun', size: 20 } },
                 xaxis: { 
@@ -616,7 +780,6 @@
                 legend: { orientation: 'h', y: 1.02, x: 0.5, xanchor: 'center', bgcolor: 'transparent', font: { size: 16 } }
             };
             
-            // Plotly Configuration 
             const config = {
                 displayModeBar: false, scrollZoom: false, modeBarButtonsToRemove: ['zoom2d', 'pan2d']
             };
@@ -723,14 +886,16 @@
             const chartsArea = document.getElementById('charts-area');
             const validData = processed.filter(d => d.hospital);
             const isDataEmpty = validData.length === 0 || validData.every(d => d.totalTarget === 0);
-
-            // ซ่อนหรือแสดงพื้นที่กราฟที่สองเสมอเมื่อมีการเปลี่ยนแปลงตัวกรอง
-            const groupChartContainer = document.getElementById('chart-group-comparison');
             
+            // Clear or update AI Analysis section for initial state
+            const aiOutputDiv = document.getElementById('ai-analysis-output');
+            aiOutputDiv.innerHTML = '<span class="text-gray-500">รอการประมวลผลการวิเคราะห์...</span>';
+
+
             if (isDataEmpty) {
                 chartsArea.innerHTML = '<div class="text-center p-10 text-xl text-gray-500 bg-gray-100 rounded-lg">*** กรุณาเข้าสู่หน้า Admin เพื่อบันทึกข้อมูลเป้าหมายและการคัดกรอง ***</div>';
                 document.getElementById('table-container').innerHTML = '<div class="text-center p-10 text-xl text-gray-500">ไม่มีข้อมูลการบันทึก กรุณาเข้าสู่หน้า Admin เพื่อเริ่มต้น</div>';
-                groupChartContainer.classList.add('hidden');
+                aiOutputDiv.innerHTML = '<span class="text-gray-500">ไม่สามารถวิเคราะห์ได้ เนื่องจากไม่มีข้อมูล</span>';
                 return;
             }
 
@@ -748,12 +913,17 @@
                 const overallGroupData = getOverallGroupData(MOCK_DATA);
                 const groupChartDiv = document.createElement('div');
                 groupChartDiv.id = 'chart-group-comparison';
-                groupChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100 mt-8'; // เพิ่ม mt-8 เพื่อเว้นระยะ
+                groupChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100 mt-8'; 
                 chartsArea.appendChild(groupChartDiv);
                 drawChart(overallGroupData, true, 'chart-group-comparison', 'อัตราการคัดกรองรวม: แยกตามกลุ่มความเสี่ยง (ทุกสถานบริการรวมกัน)');
                 
                 // ตารางสรุปภาพรวมทั้งหมด
                 renderTable(processed, 'All');
+                
+                // *** NEW: 3. AI Analysis ***
+                await generateAIAnalysis(processed, overallGroupData, selectedHospital);
+
+
             } else {
                 // กราฟที่ 3: รายโรงพยาบาล (Group Comparison)
                 const hospitalData = processed.filter(d => d.hospital === selectedHospital);
@@ -774,6 +944,9 @@
 
                 // ตารางสรุปรายกลุ่มเสี่ยงของโรงพยาบาลที่เลือก
                 renderTable(hospitalData, selectedHospital); 
+                
+                // *** NEW: 3. AI Analysis *** (จะแสดงข้อความว่าให้เลือก 'แสดงทั้งหมด')
+                await generateAIAnalysis(processed, [], selectedHospital);
             }
         }
 
