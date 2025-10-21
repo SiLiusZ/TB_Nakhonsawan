@@ -91,8 +91,14 @@
             <!-- Chart Container (Plotly) -->
             <!-- Use chart-main-overall ID for single chart -->
             <div id="charts-area" class="flex flex-wrap justify-center -mx-2 mb-12">
+                <!-- กราฟที่ 1: อัตราคัดกรองรวมรายสถานบริการ -->
                 <div id="chart-main-overall" class="chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100">
                     <!-- Plotly chart will be injected here (used for Overall View) -->
+                </div>
+                
+                <!-- NEW CHART CONTAINER: กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (แสดงเฉพาะเมื่อเลือก All) -->
+                <div id="chart-group-comparison" class="chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100">
+                    <!-- Plotly chart will be injected here (used for Overall Group Comparison) -->
                 </div>
             </div>
 
@@ -275,6 +281,69 @@
             chartData.sort((a, b) => b.percentage - a.percentage);
             return chartData;
         }
+        
+        // --- NEW FUNCTION: Get Overall Group Comparison Data ---
+        function getOverallGroupData(dataToProcess) {
+            const overallGroupSummary = {};
+
+            // 1. รวม Target และ Screened ของทุกโรงพยาบาลเข้าด้วยกันตามกลุ่มเสี่ยง
+            for (const hospital in dataToProcess) {
+                const riskGroupDetails = dataToProcess[hospital];
+                for (const riskGroup in riskGroupDetails) {
+                    const data = riskGroupDetails[riskGroup];
+                    const target = parseInt(data.target) || 0;
+                    const screened = parseInt(data.screened) || 0;
+
+                    if (!overallGroupSummary[riskGroup]) {
+                        overallGroupSummary[riskGroup] = { target: 0, screened: 0 };
+                    }
+
+                    overallGroupSummary[riskGroup].target += target;
+                    overallGroupSummary[riskGroup].screened += screened;
+                }
+            }
+
+            // 2. คำนวณเปอร์เซ็นต์และเตรียมข้อมูลสำหรับ Plotly
+            const chartData = [];
+            for (const riskGroup in overallGroupSummary) {
+                const { target, screened } = overallGroupSummary[riskGroup];
+                const percentage = target > 0 ? (screened / target) * 100 : 0;
+                const targetPct = SUCCESS_THRESHOLDS[riskGroup] || 100;
+
+                chartData.push({
+                    originalLabel: riskGroup,
+                    label: formatRiskGroupLabel(riskGroup),
+                    target: target,
+                    screened: screened,
+                    percentage: percentage,
+                    targetPct: targetPct
+                });
+            }
+            
+            // 3. เพิ่มภาพรวม (ทั้งหมด)
+            const totalTarget = chartData.reduce((sum, d) => sum + d.target, 0);
+            const totalScreened = chartData.reduce((sum, d) => sum + d.screened, 0);
+            const overallPercentage = totalTarget > 0 ? (totalScreened / totalTarget) * 100 : 0;
+            const overallLabel = "0. ภาพรวม (ทั้งหมด)";
+            
+            chartData.push({
+                originalLabel: overallLabel,
+                label: overallLabel,
+                target: totalTarget,
+                screened: totalScreened,
+                percentage: overallPercentage,
+                targetPct: SUCCESS_THRESHOLDS[overallLabel] || 100
+            });
+            
+            // 4. จัดเรียงตาม Custom Priority
+            chartData.sort((a, b) => {
+                const priorityA = getCustomSortPriority(a.originalLabel);
+                const priorityB = getCustomSortPriority(b.originalLabel);
+                return priorityA - priorityB;
+            });
+
+            return chartData;
+        }
 
         // --- Function to add \n to long labels for horizontal chart Y-axis (เดิม) ---
         function formatRiskGroupLabel(label) {
@@ -284,7 +353,7 @@
                 .replace(" ที่มีโรคร่วมเบาหวาน", "\nที่มีโรคร่วมเบาหวาน")
                 .replace(" ที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD", "\nที่มีโรคร่วมปอดอุดกั้นเรื้อรัง COPD")
                 .replace(" ที่สูบบุหรี่", "\nที่สูบบุหรี่")
-                .replace("+ผู้ติดสุราเรื้อรัง", "\n+ผู้ติดสุราเรื้อรัง")
+                .replace("+ผู้ติดสุราเรื้อรัง", "\n+ผู้ติดสุสุราเรื้อรัง")
                 .replace("ผู้สัมผัสผู้ป่วยวัณโรคปอด", "ผู้สัมผัส\nผู้ป่วยวัณโรคปอด")
                 .replace("บุคลากรสาธารณสุข", "บุคลากร\nสาธารณสุข");
 
@@ -348,7 +417,7 @@
             return comparisonData;
         }
 
-        // --- Plotly Chart Rendering Logic (เดิม) ---
+        // --- Plotly Chart Rendering Logic (ปรับปรุงเล็กน้อยเพื่อรองรับกราฟใหม่) ---
         function drawChart(data, isComparisonView, targetDivId = 'chart-main-overall', titleOverride = null) {
             const chartContainer = document.getElementById(targetDivId);
             
@@ -364,11 +433,115 @@
                 return;
             }
 
-            const overallDynamicHeight = Math.max(300, data.length * 35 + 150); 
-            const dynamicHeight = Math.max(200, data.length * 60 + 80); 
-            const useHeight = isComparisonView ? dynamicHeight : overallDynamicHeight;
-            
-            if (isComparisonView) {
+            // คำนวณความสูง
+            const isOverallHospitalView = targetDivId === 'chart-main-overall';
+            const isOverallGroupView = targetDivId === 'chart-group-comparison';
+
+            const baseHeight = 350;
+            const rowHeight = 40;
+            let calculatedHeight = Math.max(baseHeight, data.length * rowHeight + 120);
+
+            // 2. Data Setup and Margin Configuration
+            if (isOverallHospitalView) {
+                // กราฟที่ 1: ภาพรวมรายสถานบริการ
+                labels = data.map(d => d.hospital);
+                percentages = data.map(d => d.percentage);
+                chartTitle = 'อัตราการคัดกรองวัณโรคตามกลุ่มเสี่ยง (ภาพรวม)';
+                marginConfig = { l: 250, r: 50, t: 80, b: 50 }; 
+                
+                const traceOverall = {
+                    x: percentages, 
+                    y: labels,
+                    name: 'อัตราคัดกรอง (%)',
+                    type: 'bar',
+                    orientation: orientation,
+                    marker: { 
+                        color: data.map(d => d.percentage >= 80 ? '#059669' : '#dc2626'), // สีตาม Threshold 80%
+                        line: { color: 'white', width: 1 }
+                    }, 
+                    text: percentages.map(p => `${p.toFixed(2)}%`), 
+                    textposition: 'auto',
+                    textfont: { size: 14, family: 'Sarabun, sans-serif' }, 
+                    hovertemplate: '<b>%{y}</b><br>อัตราคัดกรอง: %{x:.2f}%<br>เป้าหมายรวม: %{customdata[0]:,}<br>ผลการคัดกรอง: %{customdata[1]:,}<extra></extra>',
+                    customdata: data.map(d => [d.totalTarget, d.totalScreened])
+                };
+                traces.push(traceOverall);
+                
+                // เพิ่มเส้นเป้าหมาย 80%
+                 shapes.push({
+                    type: 'line',
+                    xref: 'x', 
+                    yref: 'paper',
+                    x0: 80, x1: 80, 
+                    y0: 0, y1: 1, 
+                    line: { color: 'red', width: 2, dash: 'dash' }
+                });
+                annotations.push({
+                    xref: 'x', yref: 'paper', x: 80, y: 1.05, 
+                    text: 'เป้าหมาย 80%', showarrow: false, 
+                    xanchor: 'left', font: { color: 'red', size: 14, family: 'Sarabun, sans-serif' }
+                });
+
+
+            } else if (isOverallGroupView) {
+                 // กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (ใช้ logic เดียวกับ Comparison View แต่ไม่มี Hospital Name)
+                labels = data.map(d => d.label);
+                percentages = data.map(d => d.percentage);
+                chartTitle = 'อัตราการคัดกรองรวม: แยกตามกลุ่มความเสี่ยง (ทุกสถานบริการรวมกัน)';
+                marginConfig = { l: 400, r: 100, t: 60, b: 50 }; 
+                
+                const traceScreening = {
+                    x: percentages, 
+                    y: labels,
+                    name: 'อัตราคัดกรอง (%)',
+                    type: 'bar',
+                    orientation: orientation,
+                    marker: { 
+                        color: data.map(d => {
+                            const targetPct = d.targetPct || 0;
+                            return d.percentage >= targetPct ? '#10b981' : '#f59e0b'; // Emerald (Success) or Amber (Failure)
+                        }),
+                        line: { color: 'white', width: 1 }
+                    },
+                    text: percentages.map(p => `${p.toFixed(2)}%`),
+                    textposition: 'outside',
+                    textfont: { size: 14, family: 'Sarabun, sans-serif' },
+                    hovertemplate: '<b>%{y}</b><br>อัตราคัดกรอง: %{x:.2f}%<br>เป้าหมาย **(Target): %{customdata[2]}%**<br>เป้าหมายรวม: %{customdata[0]:,}<br>ผลการคัดกรองรวม: %{customdata[1]:,}<extra></extra>',
+                    customdata: data.map(d => [d.target, d.screened, d.targetPct])
+                };
+                traces.push(traceScreening);
+                
+                // Target Lines (ใช้ logic เดียวกับ Comparison View)
+                const uniqueTargets = [...new Set(data.map(d => d.targetPct))].filter(t => t > 0);
+
+                uniqueTargets.forEach(target => {
+                    data.forEach((d, index) => {
+                        if (d.targetPct === target) {
+                            shapes.push({
+                                type: 'line',
+                                xref: 'x', 
+                                yref: 'y',
+                                x0: target, x1: target, 
+                                y0: index - 0.2, y1: index + 0.2, 
+                                line: { color: 'red', width: 2, dash: 'dot' }
+                            });
+
+                            const isPriorityGroup = d.originalLabel.includes('0. ภาพรวม') || d.originalLabel.includes('1. ผู้สัมผัส') || d.originalLabel.includes('2. ผู้ติดเชื้อ') || d.originalLabel.includes('6. ผู้ต้องขัง');
+                            
+                            if (isPriorityGroup || target === 90) { 
+                                annotations.push({
+                                    xref: 'x', yref: 'y', x: target, y: index, 
+                                    text: `${target}% (เป้าหมาย)`, showarrow: false,
+                                    xanchor: 'left', yanchor: 'middle', xshift: 5, 
+                                    font: { color: 'red', size: 14, family: 'Sarabun, sans-serif' }
+                                });
+                            }
+                        }
+                    });
+                });
+
+            } else {
+                // กราฟที่ 3: รายสถานบริการ (Group Comparison) (ไม่เปลี่ยนแปลง)
                 labels = data.map(d => d.label);
                 percentages = data.map(d => d.percentage);
                 chartTitle = titleOverride || `อัตราการคัดกรอง: ${data[0].hospital} (แยกตามกลุ่มเสี่ยง)`;
@@ -383,19 +556,13 @@
                     marker: { 
                         color: data.map(d => {
                             const targetPct = d.targetPct || 0;
-                            return d.percentage >= targetPct ? '#10b981' : '#f59e0b'; 
+                            return d.percentage >= targetPct ? '#10b981' : '#f59e0b';
                         }),
-                        line: {
-                            color: 'white',
-                            width: 1
-                        }
+                        line: { color: 'white', width: 1 }
                     },
                     text: percentages.map(p => `${p.toFixed(2)}%`),
                     textposition: 'outside',
-                    textfont: {
-                        size: 14, 
-                        family: 'Sarabun, sans-serif'
-                    },
+                    textfont: { size: 14, family: 'Sarabun, sans-serif' },
                     hovertemplate: '<b>%{y}</b><br>อัตราคัดกรอง: %{x:.2f}%<br>เป้าหมาย **(Target): %{customdata[2]}%**<br>เป้าหมาย: %{customdata[0]:,}<br>ผลการคัดกรอง: %{customdata[1]:,}<extra></extra>',
                     customdata: data.map(d => [d.target, d.screened, d.targetPct])
                 };
@@ -408,116 +575,50 @@
                         if (d.targetPct === target) {
                             shapes.push({
                                 type: 'line',
-                                xref: 'x', 
-                                yref: 'y',
-                                x0: target, 
-                                y0: index - 0.2, 
-                                x1: target, 
-                                y1: index + 0.2, 
-                                line: {
-                                    color: 'red',
-                                    width: 2,
-                                    dash: 'dot' 
-                                }
+                                xref: 'x', yref: 'y',
+                                x0: target, x1: target, 
+                                y0: index - 0.2, y1: index + 0.2, 
+                                line: { color: 'red', width: 2, dash: 'dot' }
                             });
-
                             const isPriorityGroup = d.originalLabel.includes('0. ภาพรวม') || d.originalLabel.includes('1. ผู้สัมผัส') || d.originalLabel.includes('2. ผู้ติดเชื้อ') || d.originalLabel.includes('6. ผู้ต้องขัง');
-                            
                             if (isPriorityGroup || target === 90) { 
                                 annotations.push({
-                                    xref: 'x', 
-                                    yref: 'y',
-                                    x: target, 
-                                    y: index, 
-                                    text: `${target}% (เป้าหมาย)`,
-                                    showarrow: false,
-                                    xanchor: 'left', 
-                                    yanchor: 'middle',
-                                    xshift: 5, 
-                                    font: {
-                                        color: 'red',
-                                        size: 14, 
-                                        family: 'Sarabun, sans-serif'
-                                    }
+                                    xref: 'x', yref: 'y', x: target, y: index, 
+                                    text: `${target}% (เป้าหมาย)`, showarrow: false,
+                                    xanchor: 'left', yanchor: 'middle', xshift: 5, 
+                                    font: { color: 'red', size: 14, family: 'Sarabun, sans-serif' }
                                 });
                             }
                         }
                     });
                 });
-                
-            } else {
-                labels = data.map(d => d.hospital);
-                percentages = data.map(d => d.percentage);
-                chartTitle = 'อัตราการคัดกรองวัณโรคตามกลุ่มเสี่ยง (ภาพรวม)';
-                
-                marginConfig = { l: 250, r: 50, t: 80, b: 50 }; 
-                
-                const traceOverall = {
-                    x: percentages, 
-                    y: labels,
-                    name: 'อัตราคัดกรอง (%)',
-                    type: 'bar',
-                    orientation: orientation,
-                    marker: { 
-                        color: '#059669',
-                        line: {
-                            color: 'white',
-                            width: 1
-                        }
-                    }, 
-                    text: percentages.map(p => `${p.toFixed(2)}%`), 
-                    textposition: 'auto',
-                    textfont: {
-                        size: 14, 
-                        family: 'Sarabun, sans-serif'
-                    }, 
-                    hovertemplate: '<b>%{y}</b><br>อัตราคัดกรอง: %{x:.2f}%<br>เป้าหมายรวม: %{customdata[0]:,}<br>ผลการคัดกรอง: %{customdata[1]:,}<extra></extra>',
-                    customdata: data.map(d => [d.totalTarget, d.totalScreened])
-                };
-                traces.push(traceOverall);
             }
 
+            // 4. Plotly Layout Configuration
             const layout = {
-                title: {
-                    text: chartTitle,
-                    font: { family: 'Sarabun', size: 20 }
-                },
+                title: { text: chartTitle, font: { family: 'Sarabun', size: 20 } },
                 xaxis: { 
-                    title: 'อัตราคัดกรอง (%)', 
-                    titlefont: { size: 16 }, 
-                    tickfont: { size: 16 },  
-                    automargin: true,
-                    type: 'linear', 
-                    tickangle: 0, 
+                    title: 'อัตราคัดกรอง (%)', titlefont: { size: 16 }, tickfont: { size: 16 },  automargin: true,
+                    type: 'linear', tickangle: 0, 
                     range: [0, Math.max(100, Math.max(...percentages) * 1.2)], 
-                    gridcolor: '#e0e0e0',
-                    gridwidth: 1
+                    gridcolor: '#e0e0e0', gridwidth: 1
                 }, 
                 yaxis: { 
-                    title: isComparisonView ? 'กลุ่มความเสี่ยง' : 'สถานบริการ', 
-                    titlefont: { size: 16 }, 
-                    automargin: true,
-                    autorange: 'reversed', 
-                    gridcolor: 'transparent', 
-                    gridwidth: 0,   
-                    showgrid: true,
-                    tickfont: { size: 16 }
+                    title: (isOverallGroupView || !isOverallHospitalView) ? 'กลุ่มความเสี่ยง' : 'สถานบริการ', 
+                    titlefont: { size: 16 }, automargin: true, autorange: 'reversed', 
+                    gridcolor: 'transparent', gridwidth: 0, showgrid: true, tickfont: { size: 16 }
                 },
                 margin: marginConfig, 
-                plot_bgcolor: '#f9fafb',
-                paper_bgcolor: '#ffffff',
-                shapes: shapes, 
-                annotations: annotations, 
-                height: useHeight, 
-                bargap: 0.1, 
-                barmode: 'stack', 
-                legend: { orientation: 'h', y: 1.02, x: 0.5, xanchor: 'center', bgcolor: 'transparent', font: { size: 16 } } 
+                plot_bgcolor: '#f9fafb', paper_bgcolor: '#ffffff',
+                shapes: shapes, annotations: annotations, 
+                height: calculatedHeight, 
+                bargap: 0.1, barmode: 'stack', 
+                legend: { orientation: 'h', y: 1.02, x: 0.5, xanchor: 'center', bgcolor: 'transparent', font: { size: 16 } }
             };
             
+            // Plotly Configuration 
             const config = {
-                displayModeBar: false, 
-                scrollZoom: false,    
-                modeBarButtonsToRemove: ['zoom2d', 'pan2d']
+                displayModeBar: false, scrollZoom: false, modeBarButtonsToRemove: ['zoom2d', 'pan2d']
             };
 
             Plotly.newPlot(chartContainer, traces, layout, config);
@@ -537,7 +638,6 @@
             let dataToDisplay = [];
             
             if (hospitalFilter !== 'All' && data.length > 0) {
-                 // ตรวจสอบว่า data[0] มีอยู่จริงก่อน
                  const hospitalDetails = data[0].details;
 
                  if (hospitalDetails && hospitalDetails.length > 0) {
@@ -594,7 +694,6 @@
             const filter = document.getElementById('hospitalFilter');
             const hospitals = Object.keys(data);
             
-            // เก็บค่าที่ถูกเลือกไว้ก่อนที่จะล้างตัวเลือก
             const selectedValue = filter.value; 
 
             filter.innerHTML = '<option value="All">-- แสดงทั้งหมด --</option>';
@@ -603,7 +702,6 @@
                 const option = document.createElement('option');
                 option.value = h;
                 option.textContent = h;
-                // ตั้งค่า option ที่ถูกเลือกไว้ก่อนหน้า
                 if (h === selectedValue) {
                     option.selected = true;
                 }
@@ -612,57 +710,59 @@
         }
 
         async function filterData() {
-            // โหลดข้อมูลจาก Firestore หรือ Local Storage ทุกครั้ง
             MOCK_DATA = await loadAllData(); 
             
-            // 1. ดึงค่าที่ถูกเลือกในปัจจุบัน (ต้องทำก่อน populateFilter)
             const currentSelectedHospital = document.getElementById('hospitalFilter').value;
-            
-            // 2. เติมตัวเลือกใหม่ (populating)
             populateFilter(MOCK_DATA);
-            
-            // 3. ตั้งค่า selected value กลับคืน
             document.getElementById('hospitalFilter').value = currentSelectedHospital;
 
 
-            // ใช้ค่าที่เลือกมาใหม่หลังการโหลดข้อมูล
             const selectedHospital = document.getElementById('hospitalFilter').value;
             const processed = processData(MOCK_DATA);
             
             const chartsArea = document.getElementById('charts-area');
-            // NOTE: ใช้ processed.filter(d => d.hospital) เพื่อกรองเฉพาะข้อมูลที่มีชื่อโรงพยาบาลจริง
             const validData = processed.filter(d => d.hospital);
             const isDataEmpty = validData.length === 0 || validData.every(d => d.totalTarget === 0);
 
-
+            // ซ่อนหรือแสดงพื้นที่กราฟที่สองเสมอเมื่อมีการเปลี่ยนแปลงตัวกรอง
+            const groupChartContainer = document.getElementById('chart-group-comparison');
+            
             if (isDataEmpty) {
                 chartsArea.innerHTML = '<div class="text-center p-10 text-xl text-gray-500 bg-gray-100 rounded-lg">*** กรุณาเข้าสู่หน้า Admin เพื่อบันทึกข้อมูลเป้าหมายและการคัดกรอง ***</div>';
                 document.getElementById('table-container').innerHTML = '<div class="text-center p-10 text-xl text-gray-500">ไม่มีข้อมูลการบันทึก กรุณาเข้าสู่หน้า Admin เพื่อเริ่มต้น</div>';
-                
+                groupChartContainer.classList.add('hidden');
                 return;
             }
 
             chartsArea.innerHTML = ''; 
 
             if (selectedHospital === 'All') {
+                // กราฟที่ 1: ภาพรวมรายสถานบริการ
                 const mainChartDiv = document.createElement('div');
                 mainChartDiv.id = 'chart-main-overall';
                 mainChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100';
                 chartsArea.appendChild(mainChartDiv);
-                
                 drawChart(processed, false, 'chart-main-overall'); 
+                
+                // กราฟที่ 2: ภาพรวมรายกลุ่มเสี่ยง (NEW)
+                const overallGroupData = getOverallGroupData(MOCK_DATA);
+                const groupChartDiv = document.createElement('div');
+                groupChartDiv.id = 'chart-group-comparison';
+                groupChartDiv.className = 'chart-plot-container w-full bg-white shadow-xl rounded-xl p-4 border border-gray-100 mt-8'; // เพิ่ม mt-8 เพื่อเว้นระยะ
+                chartsArea.appendChild(groupChartDiv);
+                drawChart(overallGroupData, true, 'chart-group-comparison', 'อัตราการคัดกรองรวม: แยกตามกลุ่มความเสี่ยง (ทุกสถานบริการรวมกัน)');
+                
+                // ตารางสรุปภาพรวมทั้งหมด
                 renderTable(processed, 'All');
             } else {
-                // NOTE: กรองจาก processed data ที่เป็น array of summaries
+                // กราฟที่ 3: รายโรงพยาบาล (Group Comparison)
                 const hospitalData = processed.filter(d => d.hospital === selectedHospital);
                 
-                // *** FIX: ตรวจสอบข้อมูลก่อนวาดกราฟรายโรงพยาบาล ***
                 if (hospitalData.length === 0 || hospitalData[0].totalTarget === 0) {
                      chartsArea.innerHTML = `<div class="text-center p-10 text-xl text-gray-500 bg-gray-100 rounded-lg">ไม่พบข้อมูลการคัดกรองสำหรับ ${selectedHospital}</div>`;
                      document.getElementById('table-container').innerHTML = '';
                      return;
                 }
-                // *** END FIX ***
                 
                 const mainChartDiv = document.createElement('div');
                 mainChartDiv.id = 'chart-main-comparison';
@@ -672,18 +772,15 @@
                 const comparisonData = getGroupComparisonData(hospitalData);
                 drawChart(comparisonData, true, 'chart-main-comparison');
 
+                // ตารางสรุปรายกลุ่มเสี่ยงของโรงพยาบาลที่เลือก
                 renderTable(hospitalData, selectedHospital); 
             }
         }
 
         // --- INITIALIZATION ---
         window.onload = async function() {
-            // NOTE: เอา filterData ออกจากการเรียกตรงๆ ที่นี่
-            // แต่ให้เรียกผ่าน filterData() ทันทีที่โหลด
-            document.getElementById('hospitalFilter').addEventListener('change', filterData);
-            
-            // เรียก filterData ครั้งแรกเมื่อโหลดเสร็จ
             await filterData(); 
+            document.getElementById('hospitalFilter').addEventListener('change', filterData);
         };
     </script>
 </body>
